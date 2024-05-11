@@ -30,9 +30,7 @@
 
 #define PING_AGENT  1
 
-#define SUB_LOOP_PERIOD_MS  100
-
-#define RCCHECK(fn)                                                                                         \
+#define CHECK(fn)                                                                                           \
 	{                                                                                                       \
 		rcl_ret_t temp_rc = fn;                                                                             \
 		if ((temp_rc != RCL_RET_OK))                                                                        \
@@ -41,7 +39,7 @@
             while(1);                                                                                       \
 		}                                                                                                   \
 	}
-#define RCSOFTCHECK(fn)                                                                                     \
+#define SOFTCHECK(fn)                                                                                       \
 	{                                                                                                       \
 		rcl_ret_t temp_rc = fn;                                                                             \
 		if ((temp_rc != RCL_RET_OK))                                                                        \
@@ -50,24 +48,34 @@
 		}                                                                                                   \
 	}
 
+static const char *TAG = "uROS";
+
+void uros_task(void *argument);
+void cmdvel_sub_callback(const void * msgin);
+void mc_pub_callback();
+void sensor_pub_callback();
+void init_msgs_encoders();
+void init_msgs_sensors();
+void init_msgs_temperature();
+void ping_agent();
+
 SemaphoreHandle_t got_uros_boot;
 
 rcl_allocator_t allocator;
-
 rclc_support_t support;
-
 rcl_init_options_t init_options;
-
 rcl_node_t node;
 
-rclc_executor_t executor_publishers;
-rclc_executor_t executor_subscribers;
+rclc_executor_t executor_pub_msgs_encoders;
+rcl_publisher_t pub_msgs_encoders;
 
-rcl_publisher_t publisher_jointstate;
+rclc_executor_t executor_pub_msgs_imu;
+rcl_publisher_t pub_msgs_imu;
 
-rcl_subscription_t subscriber;
+rclc_executor_t executor_sub_msgs_cmdvel;
+rcl_subscription_t sub_msgs_cmdvel;
 
-std_msgs__msg__Int32 recv_msg;
+rosidl_runtime_c__String__Sequence msgs_encoders_name_sequence;
 
 sensor_msgs__msg__JointState msgs_encoders;
 /*
@@ -100,7 +108,7 @@ sensor_msgs__msg__JointState msgs_encoders;
         size_t size;
         size_t capacity;
 */
-geometry_msgs__msg__TwistStamped msgs_twiststamped;
+geometry_msgs__msg__TwistStamped msgs_cmdvel;
 /*
     std_msgs__msg__Header header;
         builtin_interfaces__msg__Time stamp;
@@ -241,63 +249,89 @@ sensor_msgs__msg__LaserScan msgs_lidar;
         size_t capacity;
 */
 
-static const char *TAG = "uROS";
-
 static const int n_handles_pub = 1; //number of handles that will be added in executor (executor_add_...)
 static const int n_handles_sub = 1; //number of handles that will be added in executor (executor_add_...)
 
-void subscription_callback(const void * msgin) {
-    std_msgs__msg__Int32 * msg = (std_msgs__msg__Int32 *) msgin;
-    msg->data += 1;
-    ESP_LOGI(TAG,"Received: %ld", msg->data);
+void cmdvel_sub_callback(const void * msgin) {
+    geometry_msgs__msg__TwistStamped * msg = (geometry_msgs__msg__TwistStamped *) msgin;
+    ESP_LOGI(TAG,"Received: %ld", msg->header.stamp.sec);
 }
 
-void mc_callback() {
-    rcl_ret_t rt = rcl_publish(&publisher_jointstate, &msgs_encoders, NULL);
+void mc_pub_callback() {
+    rcl_ret_t rt = rcl_publish(&pub_msgs_encoders, &msgs_encoders, NULL);
     if(RMW_RET_OK != rt) {
-        ESP_LOGI(TAG,"Error on publishing msgs");
+        ESP_LOGE(TAG,"Error on publishing encoders msgs");
         vTaskDelay(pdMS_TO_TICKS(10000));
         esp_restart();
     }
 }
 
-void init_mgs_encoders(){
-    ESP_LOGI(TAG,"Init_jointstate configured");
-    rosidl_runtime_c__String__Sequence mgs_encoders_name_sequence;
-    rosidl_runtime_c__String__Sequence__init(&mgs_encoders_name_sequence, 2);
-    msgs_encoders.name = mgs_encoders_name_sequence;
-    rosidl_runtime_c__String__Sequence__fini(&mgs_encoders_name_sequence);
-    rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[0], "Right_sprocket_base_joint", 25);
-    rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[1], "Left_sprocket_base_joint", 24);
+void sensor_pub_callback() {
+    rcl_ret_t rt = rcl_publish(&pub_msgs_imu, &msgs_imu, NULL);
+    if(RMW_RET_OK != rt) {
+        ESP_LOGE(TAG,"Error on publishing imu msgs");
+        vTaskDelay(pdMS_TO_TICKS(10000));
+        esp_restart();
+    }
+}
 
-    msgs_encoders.position.capacity = 2;
+void init_msgs_encoders(){
+    ESP_LOGI(TAG,"Init_jointstate configured");
+    rosidl_runtime_c__String__Sequence__init(&msgs_encoders_name_sequence, 2);
+    msgs_encoders.name = msgs_encoders_name_sequence;
+    rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[0], (const char *)"Right_motor", 12);
+    rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[1], (const char *)"Left_motor", 11);
+    //rosidl_runtime_c__String__Sequence__fini(&msgs_encoders_name_sequence);
+
+    msgs_encoders.position.capacity = sizeof(double) * 2;
     msgs_encoders.position.size = 2;
     msgs_encoders.position.data = (double*) malloc(msgs_encoders.position.capacity * sizeof(double));
     msgs_encoders.position.data[0] = 0; msgs_encoders.position.data[1] = 0;
 
-    msgs_encoders.velocity.capacity = 2;
+    msgs_encoders.velocity.capacity = sizeof(double) * 2;
     msgs_encoders.velocity.size = 2;
     msgs_encoders.velocity.data = (double*) malloc(msgs_encoders.velocity.capacity * sizeof(double));
     msgs_encoders.velocity.data[0] = 0; msgs_encoders.velocity.data[1] = 0;
 
-    msgs_encoders.effort.capacity = 2;
+    msgs_encoders.effort.capacity = sizeof(double) * 2;
     msgs_encoders.effort.size = 2;
     msgs_encoders.effort.data = (double*) malloc(msgs_encoders.effort.capacity * sizeof(double));
     msgs_encoders.effort.data[0] = 0; msgs_encoders.effort.data[1] = 0;
+
+    msgs_encoders.header.frame_id.capacity = 7;
+    msgs_encoders.header.frame_id.size = 6;
+    msgs_encoders.header.frame_id.data = (char*) malloc(msgs_encoders.header.frame_id.capacity * sizeof(char));
+    msgs_encoders.header.frame_id.data = "motors";
+    }
+
+void init_mgs_sensors(){
+    msgs_imu.header.frame_id.capacity = 4;
+    msgs_imu.header.frame_id.size = 3;
+    msgs_imu.header.frame_id.data = (char*) malloc(msgs_imu.header.frame_id.capacity * sizeof(char));
+    msgs_imu.header.frame_id.data = "imu";
+
+}
+
+void init_msgs_temperature(){
+    msgs_temperature.header.frame_id.capacity = 14;
+    msgs_temperature.header.frame_id.size = 13;
+    msgs_temperature.header.frame_id.data = (char*) malloc(msgs_temperature.header.frame_id.capacity * sizeof(char));
+    msgs_temperature.header.frame_id.data = "ESP32 Buildin";
+
 }
 
 rcl_ret_t init_ping_struct(){
     rclc_support_t ping_support;
-    //RCCHECK(rcl_init_options_fini(&ping_init_options));
+    //CHECK(rcl_init_options_fini(&ping_init_options));
     rcl_ret_t rc0 = rclc_support_init_with_options(&ping_support, 0, NULL, &init_options, &allocator);
     if (rc0 == RMW_RET_OK){
-        RCCHECK(rclc_support_fini(&ping_support));
+        CHECK(rclc_support_fini(&ping_support));
     }
     return rc0;
 }
 
 void ping_agent(){
-    ESP_LOGI(TAG,"Searching agent...");
+    ESP_LOGW(TAG,"Searching agent...");
     rcl_ret_t rc = init_ping_struct();
 
     if (RMW_RET_OK == rc) { //timeout_ms, attempts
@@ -316,7 +350,7 @@ void ping_agent(){
         rc = init_ping_struct();
         if (RMW_RET_OK == rc) { //timeout_ms, attempts
             ESP_LOGI(TAG,"Connection with agent reestablished!");
-            ESP_LOGW(TAG,"Resuming...");
+            ESP_LOGI(TAG,"Resuming...");
         } else {
             ESP_LOGE(TAG,"Impossible to find agent");
             ESP_LOGE(TAG,"Unstable connection! > Aborting");
@@ -327,65 +361,80 @@ void ping_agent(){
 
 void uros_task(void * arg) {
 
-    init_mgs_encoders();
+    got_uros_boot = xSemaphoreCreateBinary();
+
+    init_msgs_encoders();
+    init_msgs_sensors();
 
     allocator = rcl_get_default_allocator();
 
     init_options = rcl_get_zero_initialized_init_options();
-    RCCHECK(rcl_init_options_init(&init_options, allocator));
+    CHECK(rcl_init_options_init(&init_options, allocator));
 
     rmw_init_options_t* rmw_options = rcl_init_options_get_rmw_init_options(&init_options);
     rmw_options->localhost_only = RMW_LOCALHOST_ONLY_DISABLED;
     rmw_options->security_options.enforce_security = RMW_SECURITY_ENFORCEMENT_PERMISSIVE;
 
-    RCCHECK(rmw_uros_options_set_udp_address(CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options));
+    CHECK(rmw_uros_options_set_udp_address(CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options));
 
 #if (PING_AGENT == 1)
     ping_agent();
 #endif
 
-    RCCHECK(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
+    CHECK(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
 
     node = rcl_get_zero_initialized_node();
-    RCCHECK(rclc_node_init_default(
+    CHECK(rclc_node_init_default(
         &node, 
         "uWABA", 
         "", 
         &support));
     ESP_LOGI(TAG,"Node created");
 
-    const rosidl_message_type_support_t * type_support_p = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState);
-    RCCHECK(rclc_publisher_init_best_effort(
-        &publisher_jointstate, 
+    const rosidl_message_type_support_t * type_support_msgs_encoders = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState);
+    CHECK(rclc_publisher_init_best_effort(
+        &pub_msgs_encoders, 
         &node, 
-        type_support_p,
+        type_support_msgs_encoders,
         "encoder"));
-    ESP_LOGI(TAG,"Publisher created");
+    ESP_LOGI(TAG,"Encoder publisher created");
 
-    const rosidl_message_type_support_t * type_support_s = ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32);
-    RCCHECK(rclc_subscription_init_best_effort(
-		&subscriber,
+    const rosidl_message_type_support_t * type_support_msgs_imu = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu);
+    CHECK(rclc_publisher_init_best_effort(
+        &pub_msgs_imu, 
+        &node, 
+        type_support_msgs_imu,
+        "micro_imu"));
+    ESP_LOGI(TAG,"IMU publisher created");
+
+    const rosidl_message_type_support_t * type_support_msgs_cmdvel = ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, TwistStamped);
+    CHECK(rclc_subscription_init_best_effort(
+		&sub_msgs_cmdvel,
 		&node,
-		type_support_s,
+		type_support_msgs_cmdvel,
 		"cmd_vel"));
-    ESP_LOGI(TAG,"Subscriber created");
+    ESP_LOGI(TAG,"CmdVel subscriber created");
 
-	RCCHECK(rclc_executor_init(&executor_publishers, &support.context, n_handles_pub, &allocator));
-    RCCHECK(rclc_executor_init(&executor_subscribers, &support.context, n_handles_sub, &allocator)); 
+	CHECK(rclc_executor_init(&executor_pub_msgs_encoders, &support.context, n_handles_pub, &allocator));
+    CHECK(rclc_executor_init(&executor_pub_msgs_imu, &support.context, n_handles_pub, &allocator));
+    CHECK(rclc_executor_init(&executor_sub_msgs_cmdvel, &support.context, n_handles_sub, &allocator)); 
 
-    //RCCHECK(rclc_executor_set_timeout(&executor_publishers, RCL_MS_TO_NS(33)));
-    RCCHECK(rclc_executor_add_subscription(&executor_subscribers, &subscriber, &recv_msg, &subscription_callback, ON_NEW_DATA));
+    //CHECK(rclc_executor_set_timeout(&executor_publishers, RCL_MS_TO_NS(33)));
+    CHECK(rclc_executor_add_subscription(&executor_sub_msgs_cmdvel, &sub_msgs_cmdvel, &msgs_cmdvel, &cmdvel_sub_callback, ON_NEW_DATA));
 
     xSemaphoreGive(got_uros_boot);
     
     ESP_LOGI(TAG,"Executor spin");
-    rclc_executor_spin(&executor_publishers);
+    rclc_executor_spin(&executor_pub_msgs_encoders);
+    rclc_executor_spin(&executor_pub_msgs_imu);
 
-    RCCHECK(rclc_executor_fini(&executor_publishers));
-    RCCHECK(rclc_executor_fini(&executor_subscribers));
-	RCCHECK(rcl_publisher_fini(&publisher_jointstate, &node));
-    RCCHECK(rcl_subscription_fini(&executor_subscribers, &node));
-	RCCHECK(rcl_node_fini(&node));
+    CHECK(rclc_executor_fini(&executor_pub_msgs_encoders));
+    CHECK(rclc_executor_fini(&executor_pub_msgs_imu));
+    CHECK(rclc_executor_fini(&executor_sub_msgs_cmdvel));
+	CHECK(rcl_publisher_fini(&pub_msgs_encoders, &node));
+    CHECK(rcl_publisher_fini(&pub_msgs_imu, &node));
+    CHECK(rcl_subscription_fini(&sub_msgs_cmdvel, &node));
+	CHECK(rcl_node_fini(&node));
     rclc_support_fini(&support);
     ESP_LOGI(TAG,"Clear memory");
 
@@ -398,5 +447,6 @@ void uros_task(void * arg) {
     // std_msgs__msg__String__fini(&pub_msg);
     // std_msgs__msg__String__fini(&sub_msg);
 
+    ESP_LOGW(TAG, "Task Delete");
     vTaskDelete(NULL);
 }

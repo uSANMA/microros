@@ -11,7 +11,7 @@
 #include "esp_mac.h"
 #include "esp_timer.h"
 
-#include "std_msgs/msg/detail/header__struct.h"
+#include "std_msgs/msg/header.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -23,9 +23,9 @@ static const char *TAG = "NETWORK";
 static const char *TAG1 = "APP_MAIN";
 static const char *TAG2 = "NTP";
 
-void uros_task(void *argument);
-void motorscontrol_task(void *argument);
-void sensors_task(void *arg);
+extern void uros_task(void *argument);
+extern void motorscontrol_task(void *argument);
+extern void sensors_task(void *arg);
 
 #define MAC_BASE_CUSTOM 1
 
@@ -51,11 +51,11 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         if (s_retry_num < CONFIG_ESP_MAXIMUM_RETRY) {
             esp_wifi_connect();
             s_retry_num++;
-            ESP_LOGI(TAG, "Trying again");
+            ESP_LOGW(TAG, "Trying again");
         } else {
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         }
-        ESP_LOGI(TAG,"Connection fail");
+        ESP_LOGE(TAG,"Connection fail");
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "IP: " IPSTR, IP2STR(&event->ip_info.ip));
@@ -128,7 +128,7 @@ void wifi_init_sta(void) {
         ESP_LOGI(TAG, "Connected in SSID:%s",
                  CONFIG_ESP_WIFI_SSID);
     } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGI(TAG, "Connection fail:%s",
+        ESP_LOGW(TAG, "Connection fail:%s",
                  CONFIG_ESP_WIFI_PASSWORD);
     } else {
         ESP_LOGE(TAG, "ERROR");
@@ -179,7 +179,6 @@ void app_main(void) {
     setenv("TZ", "<-03>3", 1);
     tzset();
 
-    ESP_LOGI(TAG2, "First time boot");
     print_time();
 
     esp_err_t ret = nvs_flash_init();
@@ -203,9 +202,9 @@ void app_main(void) {
     xSemaphoreTake(got_time_semaphore, portMAX_DELAY);
 
     ESP_LOGI(TAG1, "Creating xTasks");
-    //xTaskCreatePinnedToCore(&uros_task, "uROS Task", 4096*16, NULL, 5, NULL, 0);
-    //xTaskCreatePinnedToCore(&motorscontrol_task, "Motor Control Task", 4096*4, NULL, 4, NULL, 1);
+    xTaskCreatePinnedToCore(&uros_task, "uROS Task", 4096*16, NULL, 5, NULL, 0);
     xTaskCreatePinnedToCore(&sensors_task, "Motor Control Task", 4096*4, NULL, 3, NULL, 1);
+    xTaskCreatePinnedToCore(&motorscontrol_task, "Motor Control Task", 4096*4, NULL, 4, NULL, 1);
 
     while(1);
 }

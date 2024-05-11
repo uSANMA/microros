@@ -55,11 +55,14 @@ motor_control_context_t motor_ctrl_ctx_b = {
     .pcnt_encoder = NULL,
 };
 
+void motorscontrol_task(void *argument);
+static void pid_loop_cb(void *args);
+
 extern SemaphoreHandle_t got_uros_boot;
 
 extern sensor_msgs__msg__JointState msgs_encoders;
 
-extern void mc_callback();
+extern void mc_pub_callback();
 
 extern void timestamp_update(void*arg);
 
@@ -105,16 +108,10 @@ static void pid_loop_cb(void *args) {
     bdc_motor_set_speed(motor_b, (uint32_t)new_speed_b);
     
     timestamp_update(&msgs_encoders);
-    mc_callback();
+    mc_pub_callback();
 }
 
 void motorscontrol_task(void *arg){
-
-    got_uros_boot = xSemaphoreCreateBinary();
-
-    ESP_LOGI(TAG, "Waiting for uROS boot");
-    xSemaphoreTake(got_uros_boot, portMAX_DELAY);
-    ESP_LOGI(TAG, "Resuming...");
 
     ESP_LOGI(TAG, "Motor A Config");
     bdc_motor_config_t motor_config_a = {
@@ -246,7 +243,11 @@ void motorscontrol_task(void *arg){
     motor_ctrl_ctx_a.pid_ctrl = pid_ctrl_a;
     motor_ctrl_ctx_b.pid_ctrl = pid_ctrl_b;
 
-    ESP_LOGI(TAG, "Create a high resolution timer to PID calculation for PID A");
+    ESP_LOGW(TAG, "Waiting for uROS boot");
+    xSemaphoreTake(got_uros_boot, portMAX_DELAY);
+    ESP_LOGI(TAG, "Resuming...");
+
+    ESP_LOGI(TAG, "Create a high resolution timer to PID calculation");
     const esp_timer_create_args_t periodic_timer_args = {
         .callback = pid_loop_cb,
         .arg = NULL,
@@ -265,23 +266,15 @@ void motorscontrol_task(void *arg){
     ESP_LOGI(TAG, "Start motor speed timer loop");
     ESP_ERROR_CHECK(esp_timer_start_periodic(pid_loop_timer, PID_LOOP_PERIOD_MS));
 
+    xSemaphoreGive(got_uros_boot);
+
     vTaskDelay(pdMS_TO_TICKS(2000));
 
     ESP_ERROR_CHECK(bdc_motor_forward(motor_a));
     vTaskDelay(pdMS_TO_TICKS(1));
     ESP_ERROR_CHECK(bdc_motor_forward(motor_b));
 
-    while (1) {
-        //ESP_LOGI(TAG, "Forward motors");
-        //ESP_ERROR_CHECK(bdc_motor_forward(motor_a));
-        //ESP_ERROR_CHECK(bdc_motor_forward(motor_b));
-        //vTaskDelay(pdMS_TO_TICKS(3000));
-    
-        // ESP_LOGI(TAG, "reverse motors");
-        // ESP_ERROR_CHECK(bdc_motor_reverse(motor_a));
-        // ESP_ERROR_CHECK(bdc_motor_reverse(motor_b));
-        // vTaskDelay(pdMS_TO_TICKS(3000));
-    }
-
+    while(1);
+    ESP_LOGW(TAG, "Task Delete");
     vTaskDelete(NULL);
 }
