@@ -1,15 +1,16 @@
 #include "driver/gpio.h"
 
 #include "esp_log.h"
-#include "esp_timer.h"
 
 #include <time.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 
 #include <sensor_msgs/msg/joint_state.h>
+#include <geometry_msgs/msg/twist_stamped.h>
 
 #include "driver/pulse_cnt.h"
 #include "bdc_motor.h"
@@ -22,7 +23,9 @@ static const char *TAG = "MotorControl";
 #define MCPWM_TIMER_RESOLUTION_HZ   10000000 // 10MHz, 1 tick = 0.1us
 #define MCPWM_FREQ_HZ               16000    // 16KHz PWM
 #define MCPWM_DUTY_TICK_MAX         (MCPWM_TIMER_RESOLUTION_HZ / MCPWM_FREQ_HZ) - 20 // maximum value we can set for the duty cycle, in ticks
-#define PID_LOOP_PERIOD_MS          31250 //us 0.03125s = 31.25ms = 31250us
+#define PID_LOOP_PERIOD_MS_esp      31250 //us 0.03125s = 31.25ms = 31250us
+#define PID_LOOP_PERIOD_MS      30 //us 0.03125s = 31.25ms = 31250us
+#define PID_LOOP_ID                 0
 
 #define MCPWM_GPIO_A1               3 //forward in2 H brigde
 #define MCPWM_GPIO_A2               10 //reverse in1 H bridge
@@ -30,7 +33,9 @@ static const char *TAG = "MotorControl";
 #define ENCODER_GPIO_A2             18 //C1 motor A
 #define ENCODER_PCNT_HIGH_LIMIT_A   300
 #define ENCODER_PCNT_LOW_LIMIT_A    -300
-float PID_EXPECT_SPEED_A = 55;  // expected motor speed, in the pulses counted by the rotary encoder
+float PID_EXPECT_SPEED_A = 0;  // expected motor speed, in the pulses counted by the rotary encoder
+float PID_EXPECT_MAXSPEED_A = 200;
+char orientation_motora = 'F';
 
 #define MCPWM_GPIO_B1               11 //forward in1 H brigde
 #define MCPWM_GPIO_B2               12 //reverse in2 H bridge
@@ -38,7 +43,13 @@ float PID_EXPECT_SPEED_A = 55;  // expected motor speed, in the pulses counted b
 #define ENCODER_GPIO_B2             13 //C2 motor A
 #define ENCODER_PCNT_HIGH_LIMIT_B   300
 #define ENCODER_PCNT_LOW_LIMIT_B    -300
-float PID_EXPECT_SPEED_B = 55;  // expected motor speed, in the pulses counted by the rotary encoder
+float PID_EXPECT_SPEED_B = 0;  // expected motor speed, in the pulses counted by the rotary encoder
+float PID_EXPECT_MAXSPEED_B = 200;
+char orientation_motorb = 'F';
+
+const float wheels_separation = 0.13607;
+const float reduction_radio = 18.8;
+const float wheels_separation2 = 9.4;
 
 typedef struct {
     bdc_motor_handle_t motor;
@@ -56,62 +67,27 @@ motor_control_context_t motor_ctrl_ctx_b = {
 };
 
 void motorscontrol_task(void *argument);
-static void pid_loop_cb(void *args);
+void motorcontrol_loop_cb(TimerHandle_t);
 
-extern SemaphoreHandle_t got_uros_boot;
+TimerHandle_t motorcontrol_timer;
+
+extern SemaphoreHandle_t uros_boot_motorcontrol;
+SemaphoreHandle_t timer_motorcontrol;
 
 extern sensor_msgs__msg__JointState msgs_encoders;
+extern geometry_msgs__msg__TwistStamped msgs_cmdvel;
 
-extern void mc_pub_callback();
+extern void motorcontrol_pub_callback();
 
 extern void timestamp_update(void*arg);
 
-static void pid_loop_cb(void *args) {
-    //ESP_LOGI(TAG, "PID CallBack");
-    static int last_pulse_count_a = 0;
-    static int last_pulse_count_b = 0;
-    motor_control_context_t *ctx_a = (motor_control_context_t *)&motor_ctrl_ctx_a;
-    motor_control_context_t *ctx_b = (motor_control_context_t *)&motor_ctrl_ctx_b;
-    pcnt_unit_handle_t pcnt_unit_a = ctx_a->pcnt_encoder;
-    pcnt_unit_handle_t pcnt_unit_b = ctx_b->pcnt_encoder;
-    pid_ctrl_block_handle_t pid_ctrl_a = ctx_a->pid_ctrl;
-    pid_ctrl_block_handle_t pid_ctrl_b = ctx_b->pid_ctrl;
-    bdc_motor_handle_t motor_a = ctx_a->motor;
-    bdc_motor_handle_t motor_b = ctx_b->motor;
-
-    // encoder reading
-    int cur_pulse_count_a = 0;
-    int cur_pulse_count_b = 0;
-    pcnt_unit_get_count(pcnt_unit_a, &cur_pulse_count_a);
-    pcnt_unit_get_count(pcnt_unit_b, &cur_pulse_count_b);
-    int real_pulses_a = cur_pulse_count_a - last_pulse_count_a;
-    int real_pulses_b = cur_pulse_count_b - last_pulse_count_b;
-    last_pulse_count_a = cur_pulse_count_a;
-    last_pulse_count_b = cur_pulse_count_b;
-    ctx_a->report_pulses = real_pulses_a;
-    ctx_b->report_pulses = real_pulses_b;
-
-    // calculate the speed error
-    msgs_encoders.velocity.data[0] = real_pulses_a;
-    msgs_encoders.velocity.data[1] = real_pulses_b;
-    if (real_pulses_a < 0){real_pulses_a = -real_pulses_a;}
-    if (real_pulses_b < 0){real_pulses_b = -real_pulses_b;}
-    float error_a = PID_EXPECT_SPEED_A - real_pulses_a;
-    float error_b = PID_EXPECT_SPEED_B - real_pulses_b;
-    float new_speed_a = 0;
-    float new_speed_b = 0;
-
-    // set the new speed
-    pid_compute(pid_ctrl_a, error_a, &new_speed_a);
-    pid_compute(pid_ctrl_b, error_b, &new_speed_b);
-    bdc_motor_set_speed(motor_a, (uint32_t)new_speed_a);
-    bdc_motor_set_speed(motor_b, (uint32_t)new_speed_b);
-    
-    timestamp_update(&msgs_encoders);
-    mc_pub_callback();
+void motorcontrol_loop_cb(TimerHandle_t xTimer) {
+    xSemaphoreGive(timer_motorcontrol);
 }
 
 void motorscontrol_task(void *arg){
+
+    timer_motorcontrol = xSemaphoreCreateBinary();
 
     ESP_LOGI(TAG, "Motor A Config");
     bdc_motor_config_t motor_config_a = {
@@ -128,16 +104,22 @@ void motorscontrol_task(void *arg){
     };
 
     ESP_LOGI(TAG, "MCPWM Config");
-    bdc_motor_mcpwm_config_t mcpwm_config = {
+    bdc_motor_mcpwm_config_t mcpwm_config_a = {
         .group_id = 0,
+        .resolution_hz = MCPWM_TIMER_RESOLUTION_HZ,
+    };
+
+    ESP_LOGI(TAG, "MCPWM Config");
+    bdc_motor_mcpwm_config_t mcpwm_config_b = {
+        .group_id = 1,
         .resolution_hz = MCPWM_TIMER_RESOLUTION_HZ,
     };
 
     ESP_LOGI(TAG, "Create new motors devices");
     bdc_motor_handle_t motor_a = NULL;
     bdc_motor_handle_t motor_b = NULL;
-    ESP_ERROR_CHECK(bdc_motor_new_mcpwm_device(&motor_config_a, &mcpwm_config, &motor_a));
-    ESP_ERROR_CHECK(bdc_motor_new_mcpwm_device(&motor_config_b, &mcpwm_config, &motor_b));
+    ESP_ERROR_CHECK(bdc_motor_new_mcpwm_device(&motor_config_a, &mcpwm_config_a, &motor_a));
+    ESP_ERROR_CHECK(bdc_motor_new_mcpwm_device(&motor_config_b, &mcpwm_config_b, &motor_b));
     motor_ctrl_ctx_a.motor = motor_a;
     motor_ctrl_ctx_b.motor = motor_b;
 
@@ -243,19 +225,9 @@ void motorscontrol_task(void *arg){
     motor_ctrl_ctx_a.pid_ctrl = pid_ctrl_a;
     motor_ctrl_ctx_b.pid_ctrl = pid_ctrl_b;
 
-    ESP_LOGW(TAG, "Waiting for uROS boot");
-    xSemaphoreTake(got_uros_boot, portMAX_DELAY);
-    ESP_LOGI(TAG, "Resuming...");
-
-    ESP_LOGI(TAG, "Create a high resolution timer to PID calculation");
-    const esp_timer_create_args_t periodic_timer_args = {
-        .callback = pid_loop_cb,
-        .arg = NULL,
-        .name = "pid_loop"
-    };
-
-    esp_timer_handle_t pid_loop_timer = NULL;
-    ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &pid_loop_timer));
+    ESP_LOGW(TAG, "Waiting semaphore from uROS boot");
+    xSemaphoreTake(uros_boot_motorcontrol, portMAX_DELAY);
+    ESP_LOGI(TAG, "Resuming semaphore...");
 
     ESP_LOGI(TAG, "Enable motor A");
     ESP_ERROR_CHECK(bdc_motor_enable(motor_a));
@@ -263,18 +235,102 @@ void motorscontrol_task(void *arg){
     ESP_LOGI(TAG, "Enable motor B");
     ESP_ERROR_CHECK(bdc_motor_enable(motor_b));
 
-    ESP_LOGI(TAG, "Start motor speed timer loop");
-    ESP_ERROR_CHECK(esp_timer_start_periodic(pid_loop_timer, PID_LOOP_PERIOD_MS));
+    bdc_motor_set_speed(motor_a, (uint32_t)0);
+    bdc_motor_set_speed(motor_b, (uint32_t)0);
 
-    xSemaphoreGive(got_uros_boot);
-
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    ESP_ERROR_CHECK(bdc_motor_forward(motor_a));
-    vTaskDelay(pdMS_TO_TICKS(1));
+    //ESP_ERROR_CHECK(bdc_motor_forward(motor_a));
     ESP_ERROR_CHECK(bdc_motor_forward(motor_b));
+    ESP_ERROR_CHECK(bdc_motor_reverse(motor_a));
 
-    while(1);
-    ESP_LOGW(TAG, "Task Delete");
-    vTaskDelete(NULL);
+    ESP_LOGI(TAG, "Start motor speed timer loop");
+    motorcontrol_timer = xTimerCreate("PID Timer", PID_LOOP_PERIOD_MS, pdTRUE, (void *)PID_LOOP_ID, &motorcontrol_loop_cb);
+    if(motorcontrol_timer == NULL) {
+            ESP_LOGE(TAG, "PID Timer create Error!");
+        } else {
+            ESP_LOGI(TAG, "PID Timer created!");
+            if(xTimerStart(motorcontrol_timer, portMAX_DELAY) != pdPASS) {
+                ESP_LOGE(TAG, "PID Timer start error!");
+            } else {
+                ESP_LOGI(TAG, "PID Timer started!");
+            }
+        }
+
+
+    while(1){
+        xSemaphoreTake(timer_motorcontrol, portMAX_DELAY);
+
+        //ESP_LOGI(TAG, "PID CallBack");
+        static int last_pulse_count_a = 0;
+        static int last_pulse_count_b = 0;
+        motor_control_context_t *ctx_a = (motor_control_context_t *)&motor_ctrl_ctx_a;
+        motor_control_context_t *ctx_b = (motor_control_context_t *)&motor_ctrl_ctx_b;
+        pcnt_unit_handle_t pcnt_unit_a = ctx_a->pcnt_encoder;
+        pcnt_unit_handle_t pcnt_unit_b = ctx_b->pcnt_encoder;
+        pid_ctrl_block_handle_t pid_ctrl_a = ctx_a->pid_ctrl;
+        pid_ctrl_block_handle_t pid_ctrl_b = ctx_b->pid_ctrl;
+        bdc_motor_handle_t motor_a = ctx_a->motor;
+        bdc_motor_handle_t motor_b = ctx_b->motor;
+
+        // encoder reading
+        int cur_pulse_count_a = 0;
+        int cur_pulse_count_b = 0;
+        pcnt_unit_get_count(pcnt_unit_a, &cur_pulse_count_a);
+        pcnt_unit_get_count(pcnt_unit_b, &cur_pulse_count_b);
+        double real_pulses_a = cur_pulse_count_a - last_pulse_count_a;
+        double real_pulses_b = cur_pulse_count_b - last_pulse_count_b;
+        last_pulse_count_a = cur_pulse_count_a;
+        last_pulse_count_b = cur_pulse_count_b;
+        ctx_a->report_pulses = real_pulses_a;
+        ctx_b->report_pulses = real_pulses_b;
+
+        // calculate the speed error
+        msgs_encoders.velocity.data[0] = real_pulses_a/188;
+        msgs_encoders.velocity.data[1] = real_pulses_b/188;
+        if (real_pulses_a < 0){real_pulses_a = -real_pulses_a;}
+        if (real_pulses_b < 0){real_pulses_b = -real_pulses_b;}
+
+        PID_EXPECT_SPEED_A = ((((float)msgs_cmdvel.twist.linear.x)*10 + 0.5*(wheels_separation * ((float)msgs_cmdvel.twist.angular.z)))) * reduction_radio;
+        PID_EXPECT_SPEED_B = ((((float)msgs_cmdvel.twist.linear.x)*10 - 0.5*(wheels_separation * ((float)msgs_cmdvel.twist.angular.z)))) * reduction_radio;
+        //ESP_LOGI(TAG, "---------------------------LOG---------------------------");
+        // ESP_LOGI(TAG, "Right: %.4f", PID_EXPECT_SPEED_A);
+        // ESP_LOGI(TAG, "Left: %.4f", PID_EXPECT_SPEED_B);
+
+        // if ((PID_EXPECT_SPEED_A > 0) && (orientation_motora == 'R')){
+        //     orientation_motora = 'F';
+        //     ESP_ERROR_CHECK(bdc_motor_brake(motor_a));
+        //     ESP_ERROR_CHECK(bdc_motor_forward(motor_a));
+        // } else if ((PID_EXPECT_SPEED_A < 0) && (orientation_motora == 'F')){
+        //     orientation_motora = 'R';
+        //     PID_EXPECT_SPEED_A = -PID_EXPECT_SPEED_A;
+        //     ESP_ERROR_CHECK(bdc_motor_brake(motor_a));
+        //     ESP_ERROR_CHECK(bdc_motor_reverse(motor_a));
+        // }
+
+        // if ((PID_EXPECT_SPEED_B > 0) && (orientation_motorb == 'R')){
+        //     orientation_motorb = 'F';
+        //     ESP_ERROR_CHECK(bdc_motor_brake(motor_b));
+        //     ESP_ERROR_CHECK(bdc_motor_forward(motor_b));
+        //     pid_reset_ctrl_block(pid_ctrl_a);
+        // } else if ((PID_EXPECT_SPEED_B < 0) && (orientation_motorb == 'F')){
+        //     orientation_motorb = 'R';
+        //     PID_EXPECT_SPEED_B = -PID_EXPECT_SPEED_B;
+        //     ESP_ERROR_CHECK(bdc_motor_brake(motor_b));
+        //     ESP_ERROR_CHECK(bdc_motor_reverse(motor_b));
+        //     pid_reset_ctrl_block(pid_ctrl_b);
+        // }
+
+        float error_a = PID_EXPECT_SPEED_A - real_pulses_a;
+        float error_b = PID_EXPECT_SPEED_B - real_pulses_b;
+        float new_speed_a = 0;
+        float new_speed_b = 0;
+
+        pid_compute(pid_ctrl_a, error_a, &new_speed_a);
+        pid_compute(pid_ctrl_b, error_b, &new_speed_b);
+        bdc_motor_set_speed(motor_a, (uint32_t)new_speed_a);
+        bdc_motor_set_speed(motor_b, (uint32_t)new_speed_b);
+        
+        timestamp_update(&msgs_encoders);
+        motorcontrol_pub_callback();
+        taskYIELD();
+    }
 }

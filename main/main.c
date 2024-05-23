@@ -23,11 +23,11 @@ static const char *TAG = "NETWORK";
 static const char *TAG1 = "APP_MAIN";
 static const char *TAG2 = "NTP";
 
-extern void uros_task(void *argument);
-extern void motorscontrol_task(void *argument);
-extern void sensors_task(void *arg);
+extern void uros_task(void *);
+extern void motorscontrol_task(void *);
+extern void sensors_task(void *);
 
-#define MAC_BASE_CUSTOM 1
+#define MAC_BASE_CUSTOM 0
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
@@ -202,9 +202,9 @@ void app_main(void) {
     xSemaphoreTake(got_time_semaphore, portMAX_DELAY);
 
     ESP_LOGI(TAG1, "Creating xTasks");
-    xTaskCreatePinnedToCore(&uros_task, "uROS Task", 4096*16, NULL, 5, NULL, 0);
-    xTaskCreatePinnedToCore(&sensors_task, "Motor Control Task", 4096*4, NULL, 3, NULL, 1);
-    xTaskCreatePinnedToCore(&motorscontrol_task, "Motor Control Task", 4096*4, NULL, 4, NULL, 1);
+    xTaskCreate(uros_task, "uROS Task", 512*8, NULL, 5, NULL);
+    xTaskCreate(sensors_task, "Sensors Task", 512*5, NULL, 4, NULL);
+    xTaskCreate(motorscontrol_task, "Motor Control Task", 512*6, NULL, 4, NULL);
 
     while(1);
 }

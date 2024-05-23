@@ -51,28 +51,34 @@
 static const char *TAG = "uROS";
 
 void uros_task(void *argument);
-void cmdvel_sub_callback(const void * msgin);
-void mc_pub_callback();
-void sensor_pub_callback();
+void cmdvel_sub_callback(const void *);
+void motorcontrol_pub_callback();
+void sensors_pub_callback();
 void init_msgs_encoders();
-void init_msgs_sensors();
+void init_msgs_imu();
 void init_msgs_temperature();
+void init_msgs_laserscan();
 void ping_agent();
 
-SemaphoreHandle_t got_uros_boot;
+SemaphoreHandle_t uros_boot_sensors;
+SemaphoreHandle_t uros_boot_motorcontrol;
 
 rcl_allocator_t allocator;
 rclc_support_t support;
 rcl_init_options_t init_options;
 rcl_node_t node;
 
-rclc_executor_t executor_pub_msgs_encoders;
+rclc_executor_t executor_pub_msgs;
+rclc_executor_t executor_sub_msgs;
+
 rcl_publisher_t pub_msgs_encoders;
 
-rclc_executor_t executor_pub_msgs_imu;
+rcl_publisher_t pub_msgs_temperature;
+
+rcl_publisher_t pub_msgs_laserscan;
+
 rcl_publisher_t pub_msgs_imu;
 
-rclc_executor_t executor_sub_msgs_cmdvel;
 rcl_subscription_t sub_msgs_cmdvel;
 
 rosidl_runtime_c__String__Sequence msgs_encoders_name_sequence;
@@ -219,7 +225,7 @@ sensor_msgs__msg__Imu msgs_imu;
     double linear_acceleration_covariance[9];
 */
 
-sensor_msgs__msg__LaserScan msgs_lidar;
+sensor_msgs__msg__LaserScan msgs_laserscan;
 /*
     std_msgs__msg__Header header;
         builtin_interfaces__msg__Time stamp;
@@ -249,15 +255,15 @@ sensor_msgs__msg__LaserScan msgs_lidar;
         size_t capacity;
 */
 
-static const int n_handles_pub = 1; //number of handles that will be added in executor (executor_add_...)
+static const int n_handles_pub = 4; //number of handles that will be added in executor (executor_add_...)
 static const int n_handles_sub = 1; //number of handles that will be added in executor (executor_add_...)
 
-void cmdvel_sub_callback(const void * msgin) {
-    geometry_msgs__msg__TwistStamped * msg = (geometry_msgs__msg__TwistStamped *) msgin;
-    ESP_LOGI(TAG,"Received: %ld", msg->header.stamp.sec);
+void cmdvel_sub_callback(const void *msgin) {
+    geometry_msgs__msg__TwistStamped *msgs_cmdvel = (geometry_msgs__msg__TwistStamped *) msgin;
+    //ESP_LOGI(TAG,"Received: %ld", msgs_cmdvel_temp->header.stamp.sec);
 }
 
-void mc_pub_callback() {
+void motorcontrol_pub_callback() {
     rcl_ret_t rt = rcl_publish(&pub_msgs_encoders, &msgs_encoders, NULL);
     if(RMW_RET_OK != rt) {
         ESP_LOGE(TAG,"Error on publishing encoders msgs");
@@ -266,13 +272,27 @@ void mc_pub_callback() {
     }
 }
 
-void sensor_pub_callback() {
+void sensors_pub_callback() {
     rcl_ret_t rt = rcl_publish(&pub_msgs_imu, &msgs_imu, NULL);
     if(RMW_RET_OK != rt) {
         ESP_LOGE(TAG,"Error on publishing imu msgs");
         vTaskDelay(pdMS_TO_TICKS(10000));
         esp_restart();
     }
+
+    // rt = rcl_publish(&pub_msgs_laserscan, &msgs_laserscan, NULL);
+    // if(RMW_RET_OK != rt) {
+    //     ESP_LOGE(TAG,"Error on publishing laserscan msgs");
+    //     vTaskDelay(pdMS_TO_TICKS(10000));
+    //     esp_restart();
+    // }  
+
+    // rt = rcl_publish(&pub_msgs_temperature, &msgs_temperature, NULL);
+    // if(RMW_RET_OK != rt) {
+    //     ESP_LOGE(TAG,"Error on publishing temperature msgs");
+    //     vTaskDelay(pdMS_TO_TICKS(10000));
+    //     esp_restart();
+    // }       
 }
 
 void init_msgs_encoders(){
@@ -304,7 +324,7 @@ void init_msgs_encoders(){
     msgs_encoders.header.frame_id.data = "motors";
     }
 
-void init_mgs_sensors(){
+void init_msgs_imu(){
     msgs_imu.header.frame_id.capacity = 4;
     msgs_imu.header.frame_id.size = 3;
     msgs_imu.header.frame_id.data = (char*) malloc(msgs_imu.header.frame_id.capacity * sizeof(char));
@@ -316,7 +336,15 @@ void init_msgs_temperature(){
     msgs_temperature.header.frame_id.capacity = 14;
     msgs_temperature.header.frame_id.size = 13;
     msgs_temperature.header.frame_id.data = (char*) malloc(msgs_temperature.header.frame_id.capacity * sizeof(char));
-    msgs_temperature.header.frame_id.data = "ESP32 Buildin";
+    msgs_temperature.header.frame_id.data = "esp32 buildin";
+
+}
+
+void init_msgs_laserscan(){
+    msgs_laserscan.header.frame_id.capacity = 10;
+    msgs_laserscan.header.frame_id.size = 9;
+    msgs_laserscan.header.frame_id.data = (char*) malloc(msgs_laserscan.header.frame_id.capacity * sizeof(char));
+    msgs_laserscan.header.frame_id.data = "laserscan";
 
 }
 
@@ -361,10 +389,20 @@ void ping_agent(){
 
 void uros_task(void * arg) {
 
-    got_uros_boot = xSemaphoreCreateBinary();
+    uros_boot_sensors = xSemaphoreCreateBinary();
+    uros_boot_motorcontrol = xSemaphoreCreateBinary();
+
+    pub_msgs_encoders = rcl_get_zero_initialized_publisher();
+    pub_msgs_temperature = rcl_get_zero_initialized_publisher();
+    pub_msgs_imu = rcl_get_zero_initialized_publisher();
+    pub_msgs_laserscan = rcl_get_zero_initialized_publisher();
+
+    sub_msgs_cmdvel = rcl_get_zero_initialized_subscription();
 
     init_msgs_encoders();
-    init_msgs_sensors();
+    init_msgs_imu();
+    init_msgs_temperature();
+    init_msgs_laserscan();
 
     allocator = rcl_get_default_allocator();
 
@@ -386,7 +424,7 @@ void uros_task(void * arg) {
     node = rcl_get_zero_initialized_node();
     CHECK(rclc_node_init_default(
         &node, 
-        "uWABA", 
+        "uWABA_node", 
         "", 
         &support));
     ESP_LOGI(TAG,"Node created");
@@ -396,7 +434,7 @@ void uros_task(void * arg) {
         &pub_msgs_encoders, 
         &node, 
         type_support_msgs_encoders,
-        "encoder"));
+        "micro_encoders"));
     ESP_LOGI(TAG,"Encoder publisher created");
 
     const rosidl_message_type_support_t * type_support_msgs_imu = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu);
@@ -407,36 +445,56 @@ void uros_task(void * arg) {
         "micro_imu"));
     ESP_LOGI(TAG,"IMU publisher created");
 
+    // const rosidl_message_type_support_t * type_support_msgs_temperature = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Temperature);
+    // CHECK(rclc_publisher_init_best_effort(
+    //     &pub_msgs_temperature, 
+    //     &node, 
+    //     type_support_msgs_temperature,
+    //     "micro_temperature"));
+    // ESP_LOGI(TAG,"Temperature publisher created");
+
+    // const rosidl_message_type_support_t * type_support_msgs_laserscan = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan);
+    // CHECK(rclc_publisher_init_best_effort(
+    //     &pub_msgs_laserscan, 
+    //     &node, 
+    //     type_support_msgs_laserscan,
+    //     "micro_laserscan"));
+    // ESP_LOGI(TAG,"Laserscan publisher created");
+
     const rosidl_message_type_support_t * type_support_msgs_cmdvel = ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, TwistStamped);
     CHECK(rclc_subscription_init_best_effort(
 		&sub_msgs_cmdvel,
 		&node,
 		type_support_msgs_cmdvel,
-		"cmd_vel"));
+		"uwaba_controller_server_node/cmd_vel"));
     ESP_LOGI(TAG,"CmdVel subscriber created");
 
-	CHECK(rclc_executor_init(&executor_pub_msgs_encoders, &support.context, n_handles_pub, &allocator));
-    CHECK(rclc_executor_init(&executor_pub_msgs_imu, &support.context, n_handles_pub, &allocator));
-    CHECK(rclc_executor_init(&executor_sub_msgs_cmdvel, &support.context, n_handles_sub, &allocator)); 
+    CHECK(rclc_executor_init(&executor_sub_msgs, &support.context, n_handles_sub, &allocator)); 
+	CHECK(rclc_executor_init(&executor_pub_msgs, &support.context, n_handles_pub, &allocator));
 
     //CHECK(rclc_executor_set_timeout(&executor_publishers, RCL_MS_TO_NS(33)));
-    CHECK(rclc_executor_add_subscription(&executor_sub_msgs_cmdvel, &sub_msgs_cmdvel, &msgs_cmdvel, &cmdvel_sub_callback, ON_NEW_DATA));
+    CHECK(rclc_executor_add_subscription(&executor_sub_msgs, &sub_msgs_cmdvel, &msgs_cmdvel, &cmdvel_sub_callback, ON_NEW_DATA));
 
-    xSemaphoreGive(got_uros_boot);
+    xSemaphoreGive(uros_boot_sensors);
+    xSemaphoreGive(uros_boot_motorcontrol);
     
     ESP_LOGI(TAG,"Executor spin");
-    rclc_executor_spin(&executor_pub_msgs_encoders);
-    rclc_executor_spin(&executor_pub_msgs_imu);
+    rclc_executor_spin(&executor_sub_msgs);
+    rclc_executor_spin(&executor_pub_msgs);
 
-    CHECK(rclc_executor_fini(&executor_pub_msgs_encoders));
-    CHECK(rclc_executor_fini(&executor_pub_msgs_imu));
-    CHECK(rclc_executor_fini(&executor_sub_msgs_cmdvel));
+    ESP_LOGI(TAG,"Clear memory");
+    CHECK(rclc_executor_fini(&executor_sub_msgs));
+    CHECK(rclc_executor_fini(&executor_pub_msgs));
+
 	CHECK(rcl_publisher_fini(&pub_msgs_encoders, &node));
     CHECK(rcl_publisher_fini(&pub_msgs_imu, &node));
+    CHECK(rcl_publisher_fini(&pub_msgs_temperature, &node));
+    CHECK(rcl_publisher_fini(&pub_msgs_laserscan, &node));
+
     CHECK(rcl_subscription_fini(&sub_msgs_cmdvel, &node));
+
 	CHECK(rcl_node_fini(&node));
     rclc_support_fini(&support);
-    ESP_LOGI(TAG,"Clear memory");
 
     // rc = rclc_executor_fini(&executor);
     // rc += rcl_publisher_fini(&my_pub, &my_node);
@@ -447,6 +505,6 @@ void uros_task(void * arg) {
     // std_msgs__msg__String__fini(&pub_msg);
     // std_msgs__msg__String__fini(&sub_msg);
 
-    ESP_LOGW(TAG, "Task Delete");
+    ESP_LOGE(TAG, "Task Delete");
     vTaskDelete(NULL);
 }

@@ -1,14 +1,15 @@
 #include "esp_log.h"
-#include "esp_timer.h"
 #include "esp_types.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 
 #include <sensor_msgs/msg/imu.h>
 
 #include "driver/temperature_sensor.h"
+#include <sensor_msgs/msg/temperature.h>
 
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
@@ -28,6 +29,10 @@ static const char *TAG3 = "ESP32_SENSORS";
 		}                                                                                                       \
 	}
 
+#define SENSORS_LOOP_PERIOD_MS          30
+#define SENSORS_LOOP_ID                 0
+
+
 #define GPIO_SDA                        5 //gpio
 #define GPIO_SCL                        4 //gpio
 #define I2C_FREQ                        900000
@@ -37,13 +42,15 @@ static const char *TAG3 = "ESP32_SENSORS";
 #define SENSOR_LOOP_PERIOD_MS          31250 //us 0.03125s = 31.25ms = 31250us
 
 void sensors_task(void *argument);
-static void sensor_loop_cb(void *args);
+void sensors_loop_cb(TimerHandle_t);
 esp_err_t imu_read();
 esp_err_t imu_softreset();
 esp_err_t imu_init();
 esp_err_t temp_init();
 
-extern void sensor_pub_callback();
+TimerHandle_t sensors_timer;
+
+extern void sensors_pub_callback();
 
 i2c_master_bus_handle_t bus_handle;
 i2c_master_dev_handle_t imu_handle;
@@ -98,8 +105,11 @@ const uint16_t IMU_GYR_CONF_RESET = 0x0048;
 
 extern void timestamp_update(void*arg);
 
-extern SemaphoreHandle_t got_uros_boot;
+extern SemaphoreHandle_t uros_boot_sensors;
+SemaphoreHandle_t timer_sensors;
+
 extern sensor_msgs__msg__Imu msgs_imu;
+extern sensor_msgs__msg__Temperature msgs_temperature;
 /*
     std_msgs__msg__Header header;
         builtin_interfaces__msg__Time stamp;
@@ -130,20 +140,6 @@ extern sensor_msgs__msg__Imu msgs_imu;
     double linear_acceleration_covariance[9];
 */
 
-typedef struct {
-    int16_t accel_x;
-    int16_t accel_y;
-    int16_t accel_z;
-
-    int16_t gyro_x;
-    int16_t gyro_y;
-    int16_t gyro_z;
-
-    int16_t temperature;
-} IMU_t;
-
-IMU_t imu_data;
-
 esp_err_t temp_init(){
     temperature_sensor_handle_t temp_handle = NULL;
     temperature_sensor_config_t temp_sensor = {
@@ -157,15 +153,15 @@ esp_err_t temp_init(){
     float tsens_out;
     ESP_ERROR_CHECK(temperature_sensor_get_celsius(temp_handle, &tsens_out));
     ESP_LOGI(TAG3,"Temp: %.4f", tsens_out);
+    timestamp_update(&msgs_temperature);
+    msgs_temperature.temperature = tsens_out;
     // Disable the temperature sensor if it is not needed and save the power
     ESP_ERROR_CHECK(temperature_sensor_disable(temp_handle));
     return ESP_OK;
 }
 
-static void sensor_loop_cb(void *args) {
-    CHECK(imu_read());
-    timestamp_update(&msgs_imu);
-    sensor_pub_callback();
+void sensors_loop_cb(TimerHandle_t xTimer) {
+    xSemaphoreGive(timer_sensors);
 }
 
 esp_err_t imu_read(){
@@ -177,15 +173,15 @@ esp_err_t imu_read(){
         return ESP_FAIL;
     }
 
-    imu_data.accel_x = (int16_t)(raw_buffer[15] << 8 | raw_buffer[14]);
-    imu_data.accel_y = (int16_t)(raw_buffer[13] << 8 | raw_buffer[12]);
-    imu_data.accel_z = (int16_t)(raw_buffer[11] << 8 | raw_buffer[10]);
+    msgs_imu.angular_velocity.x = (int16_t)(raw_buffer[15] << 8 | raw_buffer[14]);
+    msgs_imu.angular_velocity.y = (int16_t)(raw_buffer[13] << 8 | raw_buffer[12]);
+    msgs_imu.angular_velocity.z = (int16_t)(raw_buffer[11] << 8 | raw_buffer[10]);
 
-    imu_data.gyro_x = (int16_t)(raw_buffer[9] << 8 | raw_buffer[8]);
-    imu_data.gyro_y = (int16_t)(raw_buffer[7] << 8 | raw_buffer[6]);
-    imu_data.gyro_z = (int16_t)(raw_buffer[5] << 8 | raw_buffer[4]);
+    msgs_imu.linear_acceleration.x = (int16_t)(raw_buffer[9] << 8 | raw_buffer[8]);
+    msgs_imu.linear_acceleration.y = (int16_t)(raw_buffer[7] << 8 | raw_buffer[6]);
+    msgs_imu.linear_acceleration.z = (int16_t)(raw_buffer[5] << 8 | raw_buffer[4]);
 
-    imu_data.temperature = (((int16_t)(raw_buffer[3] << 8 | raw_buffer[2]))/512) + 23;
+    msgs_temperature.temperature = (((int16_t)(raw_buffer[3] << 8 | raw_buffer[2]))/512) + 23;
 
     //ESP_LOGI(TAG1,"AX: %d", imu_data.accel_x);
     //ESP_LOGI(TAG1,"AY: %d", imu_data.accel_y);
@@ -252,6 +248,8 @@ esp_err_t imu_init(){
 
 void sensors_task(void *arg){
 
+    timer_sensors = xSemaphoreCreateBinary();
+
     CHECK(temp_init());
 
     i2c_master_bus_config_t i2c_config = {
@@ -284,21 +282,30 @@ void sensors_task(void *arg){
 
     CHECK(imu_read());
 
-    ESP_LOGW(TAG, "Waiting for uROS boot");
-    xSemaphoreTake(got_uros_boot, portMAX_DELAY);
-    ESP_LOGI(TAG, "Resuming...");
+    ESP_LOGW(TAG, "Waiting semaphore from uROS boot");
+    xSemaphoreTake(uros_boot_sensors, portMAX_DELAY);
+    ESP_LOGI(TAG, "Resuming semaphore...");
 
-    ESP_LOGI(TAG, "Create a high resolution timer to sensors read");
-    const esp_timer_create_args_t periodic_timer_args = {
-        .callback = sensor_loop_cb,
-        .arg = NULL,
-        .name = "sensor_loop"
-    };
-    esp_timer_handle_t sensor_loop_timer = NULL;
-    ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &sensor_loop_timer));
-    ESP_ERROR_CHECK(esp_timer_start_periodic(sensor_loop_timer, SENSOR_LOOP_PERIOD_MS));
+    ESP_LOGI(TAG, "Start sensors timer loop");
+    sensors_timer = xTimerCreate("Sensor Timer", SENSORS_LOOP_PERIOD_MS, pdTRUE, (void *)SENSORS_LOOP_ID, &sensors_loop_cb);
+    if(sensors_timer == NULL) {
+            ESP_LOGE(TAG, "Sensor Timer create Error!");
+        } else {
+            ESP_LOGI(TAG, "Sensor Timer created!");
+            if(xTimerStart(sensors_timer, portMAX_DELAY) != pdPASS) {
+                ESP_LOGE(TAG, "Sensor Timer start error!");
+            } else {
+                ESP_LOGI(TAG, "Sensor Timer started!");
+            }
+        }
 
-    while(1);
-    ESP_LOGW(TAG, "Task Delete");
-    vTaskDelete(NULL);
+    while(1){
+        xSemaphoreTake(timer_sensors, portMAX_DELAY);
+
+        timestamp_update(&msgs_imu);
+        CHECK(imu_read());
+        timestamp_update(&msgs_temperature);
+        sensors_pub_callback();
+        taskYIELD();
+    }
 }
