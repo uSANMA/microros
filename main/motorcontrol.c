@@ -47,6 +47,8 @@ float PID_EXPECT_SPEED_B = 0;  // expected motor speed, in the pulses counted by
 float PID_EXPECT_MAXSPEED_B = 200;
 char orientation_motorb = 'F';
 
+uint8_t orientation_loop = 0;
+
 const float wheels_separation = 0.13607;
 const float reduction_radio = 18.8;
 const float wheels_separation2 = 9.4;
@@ -238,9 +240,8 @@ void motorscontrol_task(void *arg){
     bdc_motor_set_speed(motor_a, (uint32_t)0);
     bdc_motor_set_speed(motor_b, (uint32_t)0);
 
-    //ESP_ERROR_CHECK(bdc_motor_forward(motor_a));
+    ESP_ERROR_CHECK(bdc_motor_forward(motor_a));
     ESP_ERROR_CHECK(bdc_motor_forward(motor_b));
-    ESP_ERROR_CHECK(bdc_motor_reverse(motor_a));
 
     ESP_LOGI(TAG, "Start motor speed timer loop");
     motorcontrol_timer = xTimerCreate("PID Timer", PID_LOOP_PERIOD_MS, pdTRUE, (void *)PID_LOOP_ID, &motorcontrol_loop_cb);
@@ -295,29 +296,40 @@ void motorscontrol_task(void *arg){
         // ESP_LOGI(TAG, "Right: %.4f", PID_EXPECT_SPEED_A);
         // ESP_LOGI(TAG, "Left: %.4f", PID_EXPECT_SPEED_B);
 
-        // if ((PID_EXPECT_SPEED_A > 0) && (orientation_motora == 'R')){
-        //     orientation_motora = 'F';
-        //     ESP_ERROR_CHECK(bdc_motor_brake(motor_a));
-        //     ESP_ERROR_CHECK(bdc_motor_forward(motor_a));
-        // } else if ((PID_EXPECT_SPEED_A < 0) && (orientation_motora == 'F')){
-        //     orientation_motora = 'R';
-        //     PID_EXPECT_SPEED_A = -PID_EXPECT_SPEED_A;
-        //     ESP_ERROR_CHECK(bdc_motor_brake(motor_a));
-        //     ESP_ERROR_CHECK(bdc_motor_reverse(motor_a));
-        // }
+        if ((PID_EXPECT_SPEED_A > 0) && (orientation_motora == 'R')){
+            orientation_motora = 'F';
+            bdc_motor_set_speed(motor_a, (uint32_t)0);
+            vTaskDelay(pdMS_TO_TICKS(100));
+            ESP_ERROR_CHECK(bdc_motor_forward(motor_a));
+            pid_reset_ctrl_block(pid_ctrl_a);
+            real_pulses_a = 0;
+        } else if ((PID_EXPECT_SPEED_A < 0) && (orientation_motora == 'F')){
+            orientation_motora = 'R';
+            bdc_motor_set_speed(motor_a, (uint32_t)0);
+            vTaskDelay(pdMS_TO_TICKS(100));
+            ESP_ERROR_CHECK(bdc_motor_reverse(motor_a));
+            pid_reset_ctrl_block(pid_ctrl_a);
+            real_pulses_a = 0;
+        }
+        if (PID_EXPECT_SPEED_A < 0){PID_EXPECT_SPEED_A = -PID_EXPECT_SPEED_A;}
 
-        // if ((PID_EXPECT_SPEED_B > 0) && (orientation_motorb == 'R')){
-        //     orientation_motorb = 'F';
-        //     ESP_ERROR_CHECK(bdc_motor_brake(motor_b));
-        //     ESP_ERROR_CHECK(bdc_motor_forward(motor_b));
-        //     pid_reset_ctrl_block(pid_ctrl_a);
-        // } else if ((PID_EXPECT_SPEED_B < 0) && (orientation_motorb == 'F')){
-        //     orientation_motorb = 'R';
-        //     PID_EXPECT_SPEED_B = -PID_EXPECT_SPEED_B;
-        //     ESP_ERROR_CHECK(bdc_motor_brake(motor_b));
-        //     ESP_ERROR_CHECK(bdc_motor_reverse(motor_b));
-        //     pid_reset_ctrl_block(pid_ctrl_b);
-        // }
+
+        if ((PID_EXPECT_SPEED_B > 0) && (orientation_motorb == 'R')){
+            orientation_motorb = 'F';
+            bdc_motor_set_speed(motor_b, (uint32_t)0);
+            vTaskDelay(pdMS_TO_TICKS(100));
+            ESP_ERROR_CHECK(bdc_motor_forward(motor_b));
+            pid_reset_ctrl_block(pid_ctrl_b);
+            real_pulses_b = 0;
+        } else if ((PID_EXPECT_SPEED_B < 0) && (orientation_motorb == 'F')){
+            orientation_motorb = 'R';
+            bdc_motor_set_speed(motor_b, (uint32_t)0);
+            vTaskDelay(pdMS_TO_TICKS(100));
+            ESP_ERROR_CHECK(bdc_motor_reverse(motor_b));
+            pid_reset_ctrl_block(pid_ctrl_b);
+            real_pulses_b = 0;
+        }
+        if (PID_EXPECT_SPEED_B < 0){PID_EXPECT_SPEED_B = -PID_EXPECT_SPEED_B;}
 
         float error_a = PID_EXPECT_SPEED_A - real_pulses_a;
         float error_b = PID_EXPECT_SPEED_B - real_pulses_b;
