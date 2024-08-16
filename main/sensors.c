@@ -14,6 +14,8 @@
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
 
+#include "math.h"
+
 static const char *TAG = "Sensors";
 static const char *TAG1 = "IMU";
 static const char *TAG2 = "FG";
@@ -41,12 +43,18 @@ static const char *TAG3 = "ESP32_SENSORS";
 
 #define SENSOR_LOOP_PERIOD_MS          31250 //us 0.03125s = 31.25ms = 31250us
 
+#define GRAVITY_EARTH  (9.80665f)
+
 void sensors_task(void *argument);
 void sensors_loop_cb(TimerHandle_t);
 esp_err_t imu_read();
 esp_err_t imu_softreset();
 esp_err_t imu_init();
+esp_err_t fuelgauge_init();
 esp_err_t temp_init();
+
+static float lsb_to_dps(int16_t val, float dps);
+static float lsb_to_mps(int16_t val, int8_t g_range);
 
 TimerHandle_t sensors_timer;
 
@@ -88,6 +96,8 @@ acc_bw -3dB cut-off = 0b1
 acc_range 4g 8,19 LSB/mg = 0b001
 acc_odr 50Hz = 0b0111
 result = ACC_CONF = 0b0111011010010111 = 0x7697
+
+4 
 */
 const uint8_t IMU_ACC_CONF[3] = {IMU_ACC_CONF_REG, 0x97, 0x76};
 const uint16_t IMU_ACC_CONF_RESET = 0x0028;
@@ -141,6 +151,7 @@ extern sensor_msgs__msg__Temperature msgs_temperature;
 */
 
 esp_err_t temp_init(){
+    ESP_LOGI(TAG3,"Initing internal temp sensor");
     temperature_sensor_handle_t temp_handle = NULL;
     temperature_sensor_config_t temp_sensor = {
         .range_min = 10,
@@ -173,13 +184,13 @@ esp_err_t imu_read(){
         return ESP_FAIL;
     }
 
-    msgs_imu.angular_velocity.x = (int16_t)(raw_buffer[15] << 8 | raw_buffer[14]);
-    msgs_imu.angular_velocity.y = (int16_t)(raw_buffer[13] << 8 | raw_buffer[12]);
-    msgs_imu.angular_velocity.z = (int16_t)(raw_buffer[11] << 8 | raw_buffer[10]);
+    msgs_imu.angular_velocity.x = lsb_to_dps(((int16_t)(raw_buffer[15] << 8 | raw_buffer[14])), (float)500);
+    msgs_imu.angular_velocity.y = lsb_to_dps(((int16_t)(raw_buffer[13] << 8 | raw_buffer[12])), (float)500);
+    msgs_imu.angular_velocity.z = lsb_to_dps(((int16_t)(raw_buffer[11] << 8 | raw_buffer[10])), (float)500);
 
-    msgs_imu.linear_acceleration.x = (int16_t)(raw_buffer[9] << 8 | raw_buffer[8]);
-    msgs_imu.linear_acceleration.y = (int16_t)(raw_buffer[7] << 8 | raw_buffer[6]);
-    msgs_imu.linear_acceleration.z = (int16_t)(raw_buffer[5] << 8 | raw_buffer[4]);
+    msgs_imu.linear_acceleration.x = lsb_to_mps(((int16_t)(raw_buffer[9] << 8 | raw_buffer[8])), (float)4);
+    msgs_imu.linear_acceleration.y = lsb_to_mps(((int16_t)(raw_buffer[7] << 8 | raw_buffer[6])), (float)4);
+    msgs_imu.linear_acceleration.z = lsb_to_mps(((int16_t)(raw_buffer[5] << 8 | raw_buffer[4])), (float)4);
 
     msgs_temperature.temperature = (((int16_t)(raw_buffer[3] << 8 | raw_buffer[2]))/512) + 23;
 
@@ -201,6 +212,7 @@ esp_err_t imu_softreset(){
 }
 
 esp_err_t imu_init(){
+    ESP_LOGI(TAG1,"Initing IMU");
     volatile uint8_t rt_buffer[4];
     CHECK(i2c_master_transmit_receive(imu_handle,  &IMU_CHIP_ID_REG, 1, (uint8_t *)&rt_buffer, 4, I2C_TIMEOUT_MS));
     if (rt_buffer[2] == (uint8_t)IMU_CHIP_ID_RESET){
@@ -246,6 +258,29 @@ esp_err_t imu_init(){
     return ESP_OK;
 }
 
+esp_err_t fuelgauge_init(){
+    ESP_LOGI(TAG2,"Initing Fuel Gauge");
+    return ESP_OK;
+}
+
+static float lsb_to_dps(int16_t val, float dps)
+{
+    double power = 2;
+
+    float half_scale = (float)((pow((double)power, (double)16) / 2.0f));
+
+    return (dps / (half_scale)) * (val);
+}
+
+static float lsb_to_mps(int16_t val, int8_t g_range)
+{
+    double power = 2;
+
+    float half_scale = (float)((pow((double)power, (double)16) / 2.0f));
+
+    return (GRAVITY_EARTH * val * g_range) / half_scale;
+}
+
 void sensors_task(void *arg){
 
     timer_sensors = xSemaphoreCreateBinary();
@@ -281,6 +316,8 @@ void sensors_task(void *arg){
     CHECK(imu_init());
 
     CHECK(imu_read());
+
+    CHECK(fuelgauge_init());
 
     ESP_LOGW(TAG, "Waiting semaphore from uROS boot");
     xSemaphoreTake(uros_boot_sensors, portMAX_DELAY);
