@@ -26,7 +26,7 @@ static const char *TAG3 = "ESP32_SENSORS";
 		esp_err_t temp_rc = fn;                                                                                 \
 		if ((temp_rc != ESP_OK))                                                                                \
 		{                                                                                                       \
-			ESP_LOGE("SYSTEM-SENSORS", "Failed status on line %d: %d. > Aborting\n", __LINE__, (int)temp_rc);   \
+			ESP_LOGE("SYSTEM-SENSORS", "Failed status on line: %d > returned: %d > Aborting", __LINE__, (int)temp_rc);   \
             while(1);                                                                                           \
 		}                                                                                                       \
 	}
@@ -184,12 +184,12 @@ esp_err_t imu_read(){
         return ESP_FAIL;
     }
 
-    msgs_imu.angular_velocity.x = lsb_to_dps(((int16_t)(raw_buffer[15] << 8 | raw_buffer[14])), (float)500);
-    msgs_imu.angular_velocity.y = lsb_to_dps(((int16_t)(raw_buffer[13] << 8 | raw_buffer[12])), (float)500);
+    msgs_imu.angular_velocity.x = -lsb_to_dps(((int16_t)(raw_buffer[13] << 8 | raw_buffer[12])), (float)500);
+    msgs_imu.angular_velocity.y = lsb_to_dps(((int16_t)(raw_buffer[15] << 8 | raw_buffer[14])), (float)500);
     msgs_imu.angular_velocity.z = lsb_to_dps(((int16_t)(raw_buffer[11] << 8 | raw_buffer[10])), (float)500);
 
-    msgs_imu.linear_acceleration.x = lsb_to_mps(((int16_t)(raw_buffer[9] << 8 | raw_buffer[8])), (float)4);
-    msgs_imu.linear_acceleration.y = lsb_to_mps(((int16_t)(raw_buffer[7] << 8 | raw_buffer[6])), (float)4);
+    msgs_imu.linear_acceleration.x = -lsb_to_mps(((int16_t)(raw_buffer[7] << 8 | raw_buffer[6])), (float)4);
+    msgs_imu.linear_acceleration.y = lsb_to_mps(((int16_t)(raw_buffer[9] << 8 | raw_buffer[8])), (float)4);
     msgs_imu.linear_acceleration.z = lsb_to_mps(((int16_t)(raw_buffer[5] << 8 | raw_buffer[4])), (float)4);
 
     msgs_temperature.temperature = (((int16_t)(raw_buffer[3] << 8 | raw_buffer[2]))/512) + 23;

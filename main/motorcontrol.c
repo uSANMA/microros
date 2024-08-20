@@ -24,15 +24,15 @@ static const char *TAG = "MotorControl";
 #define MCPWM_FREQ_HZ               16000    // 16KHz PWM
 #define MCPWM_DUTY_TICK_MAX         (MCPWM_TIMER_RESOLUTION_HZ / MCPWM_FREQ_HZ) - 20 // maximum value we can set for the duty cycle, in ticks
 #define PID_LOOP_PERIOD_MS_esp      31250 //us 0.03125s = 31.25ms = 31250us
-#define PID_LOOP_PERIOD_MS      30 //us 0.03125s = 31.25ms = 31250us
+#define PID_LOOP_PERIOD_MS          30 //us 0.03125s = 31.25ms = 31250us
 #define PID_LOOP_ID                 0
 
 #define MCPWM_GPIO_A1               3 //forward in2 H brigde
 #define MCPWM_GPIO_A2               10 //reverse in1 H bridge
 #define ENCODER_GPIO_A1             17 //C2 motor A
 #define ENCODER_GPIO_A2             18 //C1 motor A
-#define ENCODER_PCNT_HIGH_LIMIT_A   300
-#define ENCODER_PCNT_LOW_LIMIT_A    -300
+#define ENCODER_PCNT_HIGH_LIMIT_A   600
+#define ENCODER_PCNT_LOW_LIMIT_A    -600
 float PID_EXPECT_SPEED_A = 0;  // expected motor speed, in the pulses counted by the rotary encoder
 float PID_EXPECT_MAXSPEED_A = 200;
 char orientation_motora = 'F';
@@ -41,8 +41,8 @@ char orientation_motora = 'F';
 #define MCPWM_GPIO_B2               12 //reverse in2 H bridge
 #define ENCODER_GPIO_B1             8 //C1 motor A
 #define ENCODER_GPIO_B2             13 //C2 motor A
-#define ENCODER_PCNT_HIGH_LIMIT_B   300
-#define ENCODER_PCNT_LOW_LIMIT_B    -300
+#define ENCODER_PCNT_HIGH_LIMIT_B   600
+#define ENCODER_PCNT_LOW_LIMIT_B    -600
 float PID_EXPECT_SPEED_B = 0;  // expected motor speed, in the pulses counted by the rotary encoder
 float PID_EXPECT_MAXSPEED_B = 200;
 char orientation_motorb = 'F';

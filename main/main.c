@@ -125,13 +125,15 @@ void wifi_init_sta(void) {
             portMAX_DELAY);
 
     if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Connected in SSID:%s",
+        ESP_LOGI(TAG, "Connected in SSID: %s",
                  CONFIG_ESP_WIFI_SSID);
     } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGW(TAG, "Connection fail:%s",
+        ESP_LOGW(TAG, "Connection fail: %s",
                  CONFIG_ESP_WIFI_PASSWORD);
     } else {
-        ESP_LOGE(TAG, "ERROR");
+        ESP_LOGE(TAG, "Error on Wi-fi connection!");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_restart();
     }
 }
 
@@ -148,9 +150,7 @@ void print_time(){
 }
 
 void on_got_time(struct timeval *tv){
-    ESP_LOGI(TAG2, "On got %lld\n", tv->tv_sec);
     print_time();
-
     xSemaphoreGive(got_time_semaphore);
 }
 
@@ -198,13 +198,12 @@ void app_main(void) {
     esp_sntp_setservername(0, "pool.ntp.org");
     esp_sntp_set_time_sync_notification_cb(on_got_time);
 
-    ESP_LOGI(TAG1, "Waiting for time sync");
+    ESP_LOGI(TAG1, "Waiting for sync real time");
     xSemaphoreTake(got_time_semaphore, portMAX_DELAY);
 
     ESP_LOGI(TAG1, "Creating xTasks");
-    xTaskCreate(uros_task, "uROS Task", 512*8, NULL, 5, NULL);
-    xTaskCreate(sensors_task, "Sensors Task", 512*5, NULL, 4, NULL);
-    xTaskCreate(motorscontrol_task, "Motor Control Task", 512*6, NULL, 4, NULL);
+    xTaskCreate(uros_task, "uROS Task", 1024*6, NULL, 5, NULL);
+    xTaskCreate(sensors_task, "Sensors Task", 1024*4, NULL, 4, NULL);
+    xTaskCreate(motorscontrol_task, "Motor Control Task", 1024*4, NULL, 4, NULL);
 
-    while(1);
 }
