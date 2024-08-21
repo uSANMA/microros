@@ -24,8 +24,9 @@ static const char *TAG1 = "APP_MAIN";
 static const char *TAG2 = "NTP";
 
 extern void uros_task(void *);
-extern void motorscontrol_task(void *);
 extern void sensors_task(void *);
+extern void motorscontrol_task(void *);
+extern void lidar_task(void *);
 
 #define MAC_BASE_CUSTOM 0
 
@@ -205,5 +206,6 @@ void app_main(void) {
     xTaskCreate(uros_task, "uROS Task", 1024*6, NULL, 5, NULL);
     xTaskCreate(sensors_task, "Sensors Task", 1024*4, NULL, 4, NULL);
     xTaskCreate(motorscontrol_task, "Motor Control Task", 1024*4, NULL, 4, NULL);
+    xTaskCreate(lidar_task, "Lidar Task", 1024*4, NULL, 4, NULL);
 
 }

@@ -1,4 +1,5 @@
 #include <time.h>
+#include <math.h>
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -49,14 +50,17 @@ void uros_task(void *argument);
 void cmdvel_sub_callback(const void *);
 void motorcontrol_pub_callback();
 void sensors_pub_callback();
+void lidar_pub_callback();
 void init_msgs_encoders();
 void init_msgs_imu();
 void init_msgs_temperature();
 void init_msgs_batterypack();
+void init_msgs_laserscan();
 void ping_agent();
 
 extern void timestamp_update(void*arg);
 
+SemaphoreHandle_t uros_boot_lidar;
 SemaphoreHandle_t uros_boot_sensors;
 SemaphoreHandle_t uros_boot_motorcontrol;
 
@@ -65,16 +69,16 @@ rclc_support_t support;
 rcl_init_options_t init_options;
 rcl_node_t node;
 
+rmw_publisher_allocation_t laserscan_allocation;
+
 rclc_executor_t executor_pub_msgs;
 rclc_executor_t executor_sub_msgs;
 
 rcl_publisher_t pub_msgs_encoders;
-
 rcl_publisher_t pub_msgs_imu;
-
 rcl_publisher_t pub_msgs_temperature;
-
 rcl_publisher_t pub_msgs_batterypack;
+rcl_publisher_t pub_msgs_laserscan;
 
 rcl_subscription_t sub_msgs_cmdvel;
 
@@ -198,6 +202,35 @@ sensor_msgs__msg__BatteryState msgs_batterypack;
         size_t size;
         size_t capacity;
 */
+sensor_msgs__msg__LaserScan msgs_laserscan;
+/*
+    std_msgs__msg__Header header;
+        builtin_interfaces__msg__Time stamp;
+            int32_t sec;
+            uint32_t nanosec;
+        rosidl_runtime_c__String frame_id;
+            char * data;
+            size_t size;
+            size_t capacity;
+
+    float angle_min;
+    float angle_max;
+    float angle_increment;
+    float time_increment;
+    float scan_time;
+    float range_min;
+    float range_max;
+
+    rosidl_runtime_c__float__Sequence ranges; TYPE_NAME = float
+        TYPE_NAME * data;
+        size_t size;
+        size_t capacity;
+
+    rosidl_runtime_c__float__Sequence intensities; TYPE_NAME = float
+        TYPE_NAME * data;
+        size_t size;
+        size_t capacity;
+*/
 geometry_msgs__msg__TwistStamped msgs_cmdvel;
 /*
     std_msgs__msg__Header header;
@@ -220,7 +253,7 @@ geometry_msgs__msg__TwistStamped msgs_cmdvel;
             double z;        
 */
 
-static const int n_handles_pub = 4; //number of handles that will be added in executor (executor_add_...)
+static const int n_handles_pub = 5; //number of handles that will be added in executor (executor_add_...)
 static const int n_handles_sub = 1; //number of handles that will be added in executor (executor_add_...)
 
 void cmdvel_sub_callback(const void *msgin) {
@@ -241,34 +274,39 @@ void sensors_pub_callback() {
   
 }
 
+void lidar_pub_callback() {
+    ESP_LOGI(TAG,"Sending to ROS2");
+    CHECK(rcl_publish(&pub_msgs_laserscan, &msgs_laserscan, &laserscan_allocation));
+}
+
 void init_msgs_encoders(){
     ESP_LOGI(TAG,"Init_JointState configured");
     rosidl_runtime_c__String__Sequence__init(&msgs_encoders_name_sequence, 2);
     msgs_encoders.name = msgs_encoders_name_sequence;
     rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[0], (const char *)"Right_motor", 12);
     rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[1], (const char *)"Left_motor", 11);
-    //rosidl_runtime_c__String__Sequence__fini(&msgs_encoders_name_sequence);
+    // rosidl_runtime_c__String__Sequence__fini(&msgs_encoders_name_sequence);
 
-    msgs_encoders.position.capacity = sizeof(double) * 2;
-    msgs_encoders.position.size = 2;
-    msgs_encoders.position.data = (double*) malloc(msgs_encoders.position.capacity * sizeof(double));
-    msgs_encoders.position.data[0] = 0; msgs_encoders.position.data[1] = 0;
+    // msgs_encoders.position.capacity = sizeof(double) * 2;
+    // msgs_encoders.position.size = 2;
+    // msgs_encoders.position.data = (double*) malloc(msgs_encoders.position.capacity * sizeof(double));
+    // msgs_encoders.position.data[0] = 0; msgs_encoders.position.data[1] = 0;
 
-    msgs_encoders.velocity.capacity = sizeof(double) * 2;
+    msgs_encoders.velocity.capacity = 2;
     msgs_encoders.velocity.size = 2;
     msgs_encoders.velocity.data = (double*) malloc(msgs_encoders.velocity.capacity * sizeof(double));
     msgs_encoders.velocity.data[0] = 0; msgs_encoders.velocity.data[1] = 0;
 
-    //msgs_encoders.effort.capacity = sizeof(double) * 2;
-    //msgs_encoders.effort.size = 2;
-    //msgs_encoders.effort.data = (double*) malloc(msgs_encoders.effort.capacity * sizeof(double));
-    //msgs_encoders.effort.data[0] = 0; msgs_encoders.effort.data[1] = 0;
+    // msgs_encoders.effort.capacity = sizeof(double) * 2;
+    // msgs_encoders.effort.size = 2;
+    // msgs_encoders.effort.data = (double*) malloc(msgs_encoders.effort.capacity * sizeof(double));
+    // msgs_encoders.effort.data[0] = 0; msgs_encoders.effort.data[1] = 0;
 
     msgs_encoders.header.frame_id.capacity = 7;
     msgs_encoders.header.frame_id.size = 6;
     msgs_encoders.header.frame_id.data = (char*) malloc(msgs_encoders.header.frame_id.capacity * sizeof(char));
     msgs_encoders.header.frame_id = micro_ros_string_utilities_init("motors");
-    //msgs_encoders.header.frame_id.data = "motors";
+    // msgs_encoders.header.frame_id.data = "motors";
     }
 
 void init_msgs_imu(){
@@ -299,6 +337,39 @@ void init_msgs_batterypack(){
     msgs_batterypack.header.frame_id = micro_ros_string_utilities_init("batterypack");
     //msgs_batterypack.header.frame_id.data = "batterypack";
 
+}
+
+void init_msgs_laserscan(){
+    //https://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/LaserScan.html
+    //sensor_msgs__msg__LaserScan__init(&msgs_laserscan);
+    //msgs_laserscan = sensor_msgs__msg__LaserScan__create();
+
+    msgs_laserscan.header.frame_id.capacity = 12;
+    msgs_laserscan.header.frame_id.size = 11;
+    msgs_laserscan.header.frame_id.data = (char*) malloc(msgs_laserscan.header.frame_id.capacity * sizeof(char));
+
+    //msgs_laserscan.header.frame_id.data = "laser_frame";
+    //rosidl_runtime_c__String__init(&msgs_laserscan->header.frame_id);
+    msgs_laserscan.header.frame_id = micro_ros_string_utilities_init("laser_frame");
+    //msgs_laserscan->header.frame_id = micro_ros_string_utilities_set(msgs_laserscan->header.frame_id, "laser_frame");
+
+    msgs_laserscan.angle_min = 0.0;
+    msgs_laserscan.angle_max = (float)(2*M_PI) - msgs_laserscan.angle_increment;
+    msgs_laserscan.angle_increment = (float)(M_PI/180);
+    msgs_laserscan.time_increment = (float)msgs_laserscan.scan_time/360; // period/360 scans
+    msgs_laserscan.scan_time = (float)1/7; //period scans
+    msgs_laserscan.range_min = 0.12;
+    msgs_laserscan.range_max = 16.0;
+
+    msgs_laserscan.ranges.capacity = 360;
+    msgs_laserscan.ranges.size = 360;
+    msgs_laserscan.ranges.data = (float*) malloc(msgs_laserscan.ranges.capacity * sizeof(float));
+    //msgs_laserscan.ranges.data = (float*) malloc(msgs_laserscan.ranges.capacity * sizeof(float));
+    //(float*) calloc(msgs_laserscan.ranges.capacity, sizeof(float));
+
+    //msgs_laserscan->intensities.capacity = 360;
+    //msgs_laserscan->intensities.size = 360;
+    //msgs_laserscan->intensities.data = (float*) malloc(msgs_laserscan->intensities.capacity * sizeof(float));
 }
 
 rcl_ret_t init_ping_struct(){
@@ -344,6 +415,7 @@ void uros_task(void * arg) {
 
     uros_boot_sensors = xSemaphoreCreateBinary();
     uros_boot_motorcontrol = xSemaphoreCreateBinary();
+    uros_boot_lidar = xSemaphoreCreateBinary();
 
     allocator = rcl_get_default_allocator();
 
@@ -351,6 +423,7 @@ void uros_task(void * arg) {
     pub_msgs_imu = rcl_get_zero_initialized_publisher();
     pub_msgs_temperature = rcl_get_zero_initialized_publisher();
     pub_msgs_batterypack = rcl_get_zero_initialized_publisher();
+    pub_msgs_laserscan = rcl_get_zero_initialized_publisher();
 
     sub_msgs_cmdvel = rcl_get_zero_initialized_subscription();
 
@@ -373,6 +446,7 @@ void uros_task(void * arg) {
     init_msgs_imu();
     init_msgs_temperature();
     init_msgs_batterypack();
+    init_msgs_laserscan();
 
     node = rcl_get_zero_initialized_node();
     CHECK(rclc_node_init_default(
@@ -414,6 +488,14 @@ void uros_task(void * arg) {
         "micro_batterypack"));
     ESP_LOGI(TAG,"Batterypack publisher created");
 
+    const rosidl_message_type_support_t *type_support_msgs_laserscan = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan);
+    CHECK(rclc_publisher_init_best_effort(
+        &pub_msgs_laserscan, 
+        &node, 
+        type_support_msgs_laserscan,
+        "micro_laserscan"));
+    ESP_LOGI(TAG,"Laserscan publisher created");
+
     const rosidl_message_type_support_t * type_support_msgs_cmdvel = ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, TwistStamped);
     CHECK(rclc_subscription_init_best_effort(
 		&sub_msgs_cmdvel,
@@ -427,8 +509,9 @@ void uros_task(void * arg) {
 
     CHECK(rclc_executor_add_subscription(&executor_sub_msgs, &sub_msgs_cmdvel, &msgs_cmdvel, &cmdvel_sub_callback, ON_NEW_DATA));
 
-    xSemaphoreGive(uros_boot_sensors);
     xSemaphoreGive(uros_boot_motorcontrol);
+    xSemaphoreGive(uros_boot_sensors);
+    xSemaphoreGive(uros_boot_lidar);
 
     while(1){
         CHECK(rclc_executor_spin_some(&executor_sub_msgs, RCL_MS_TO_NS(35)));
@@ -445,6 +528,7 @@ void uros_task(void * arg) {
     CHECK(rcl_publisher_fini(&pub_msgs_imu, &node));
     CHECK(rcl_publisher_fini(&pub_msgs_temperature, &node));
     CHECK(rcl_publisher_fini(&pub_msgs_batterypack, &node));
+    CHECK(rcl_publisher_fini(&pub_msgs_laserscan, &node));
 
     CHECK(rcl_subscription_fini(&sub_msgs_cmdvel, &node));
 
