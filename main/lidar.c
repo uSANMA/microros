@@ -1,4 +1,6 @@
 #include "math.h"
+#include <string.h>
+#include <stdio.h>
 
 #include <time.h>
 
@@ -16,13 +18,28 @@
 #include "driver/gpio.h"
 #include "driver/uart.h"
 
-static const char *TAG = "Lidar";
+#define CHECKDRIVER(fn)                                                                                                         \
+	{                                                                                                                           \
+		driver_ret_t rt_driver = fn;                                                                                            \
+		if ((rt_driver != DRIVER_RET_OK))                                                                                       \
+		{                                                                                                                       \
+			ESP_LOGE("SYSTEM-LidarDriver", "Failed status on line: %d > returned: %d > Aborting", __LINE__, (int)rt_driver);     \
+            while(1);                                                                                                           \
+		}                                                                                                                       \
+	}
+
+static const char *TAG_MAIN = "Task-Lidar";
 
 const int lidar_ms_timeout = 2;
 const int lidar_init_ms_timeout = 500;
 const int uart_buffer_size = 1024;
 const int uart_queue_size = 256;
 QueueHandle_t uart_queue;
+
+typedef int8_t driver_ret_t;
+#define DRIVER_RET_ERROR -1
+#define DRIVER_RET_OK 0
+#define DRIVER_RET_TIMEOUT 2
 
 #define UART_PORT_NUM                       1
 #define UART_BAUD_RATE                      115200
@@ -33,7 +50,10 @@ QueueHandle_t uart_queue;
 
 void lidar_task(void *argument);
 void init_lidar();
-void start_scan_lidar();
+driver_ret_t get_info_lidar();
+driver_ret_t get_health_lidar();
+driver_ret_t start_scan_lidar();
+void stop_scan_lidar();
 
 extern void timestamp_update(void*arg);
 extern void lidar_pub_callback();
@@ -42,93 +62,143 @@ extern sensor_msgs__msg__LaserScan msgs_laserscan;
 
 extern SemaphoreHandle_t uros_boot_lidar;
 
-uint8_t LIDAR_PKG_STOP_SCAN[] = {0xA5, 0x25}; //sem resposta
-uint8_t LIDAR_PKG_RESET_CORE[] = {0xA5, 0x40}; //sem resposta
+uint8_t LIDAR_PKG_STOP_SCAN[] = {0xA5, 0x25}; //no descriptor
+uint8_t LIDAR_PKG_RESET_CORE[] = {0xA5, 0x40}; //no descriptor
 
-uint8_t LIDAR_PKG_START_SCAN[] = {0xA5, 0x20}; //resposta descriptor: A5 5A 05 00 00 40 81 - 5 bytes
-uint8_t LIDAR_PKG_EXPRESS_SCAN[] = {0xA5, 0x82, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22}; //resposta descriptor: A5 5A 54 00 00 40 82 - 84 bytes
-uint8_t LIDAR_PKG_FORCE_SCAN[] = {0xA5, 0x21}; //resposta descriptor: A5 5A 05 00 00 40 81 - 5 bytes
+uint8_t LIDAR_PKG_START_SCAN[] = {0xA5, 0x20}; //Descriptor + Multiple response 5 bytes
+uint8_t LIDAR_PKG_START_SCAN_DESCRIPTOR[] = {0xA5, 0x5A, 0x05, 0x00, 0x00, 0x40, 0x81}; //Descriptor: A5 5A 05 00 00 40 81
+uint8_t LIDAR_PKG_EXPRESS_SCAN[] = {0xA5, 0x82, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22}; //Descriptor + Multiple response 84 bytes + Payload 
+uint8_t LIDAR_PKG_EXPRESS_SCAN_DESCRIPTOR[] = {0xA5, 0x5A, 0x54, 0x00, 0x00, 0x40, 0x82}; //Descriptor: A5 5A 54 00 00 40 82
+uint8_t LIDAR_PKG_FORCE_SCAN[] = {0xA5, 0x21}; //Descriptor + Multiple response 5 bytes
+uint8_t LIDAR_PKG_FORCE_SCAN_DESCRIPTOR[] = {0xA5, 0x5A, 0x05, 0x00, 0x00, 0x40, 0x81}; //Descriptor: A5 5A 05 00 00 40 81
 
-uint8_t LIDAR_PKG_GET_INFO[] = {0xA5, 0x50}; //resposta descriptor: A5 5A 14 00 00 00 04 - 20 bytes
-uint8_t LIDAR_PKG_GET_HEALTH[] = {0xA5, 0x52}; //resposta descriptor: A5 5A 03 00 00 00 06 - 3 bytes
-uint8_t LIDAR_PKG_GET_SAMPLERATE[] = {0xA5, 0x59}; //resposta descriptor: A5 5A 04 00 00 00 15 - 4 bytes
+uint8_t LIDAR_PKG_GET_INFO[] = {0xA5, 0x50}; //Descriptor + Single response 20 bytes
+uint8_t LIDAR_PKG_GET_INFO_DESCRIPTOR[] = {0xA5, 0x5A, 0x14, 0x00, 0x00, 0x00, 0x04}; //Descriptor: A5 5A 14 00 00 00 04
+uint8_t LIDAR_PKG_GET_HEALTH[] = {0xA5, 0x52}; //Descriptor + Single response 3 bytes
+uint8_t LIDAR_PKG_GET_HEALTH_DESCRIPTOR[] = {0xA5, 0x5A, 0x03, 0x00, 0x00, 0x00, 0x06}; //Descriptor: A5 5A 03 00 00 00 06
+
+uint8_t LIDAR_PKG_GET_SAMPLERATE[] = {0xA5, 0x59}; //Descriptor + Single response 4 bytes
+uint8_t LIDAR_PKG_GET_SAMPLERATE_DESCRIPTOR[] = {0xA5, 0x5A, 0x04, 0x00, 0x00, 0x00, 0x15}; //Descriptor: A5 5A 04 00 00 00 15
 
 void init_lidar(){
-    uint8_t *data_uart = (uint8_t *) malloc(uart_buffer_size);
+    ESP_LOGI(TAG_MAIN,"Initing lidar driver...");
+    gpio_reset_pin(GPIO_LIDAR_PWM);
+    gpio_set_direction(GPIO_LIDAR_PWM, GPIO_MODE_OUTPUT);
+    gpio_set_pull_mode(GPIO_LIDAR_PWM, GPIO_PULLDOWN_ENABLE);
+    gpio_set_level(GPIO_LIDAR_PWM, 1);
+    vTaskDelay(pdMS_TO_TICKS(1000));
 
-    //stop scan
+    CHECKDRIVER(get_info_lidar());
+    CHECKDRIVER(get_health_lidar());
+}
+
+driver_ret_t get_info_lidar(){
+    uint8_t *data_uart = (uint8_t *) malloc(8);
+
+    stop_scan_lidar();
+
+    //read info
     uart_flush(UART_PORT_NUM);
-    uart_write_bytes(UART_PORT_NUM, (const char *) LIDAR_PKG_STOP_SCAN, 2);
-    vTaskDelay(pdMS_TO_TICKS(50));
+    ESP_LOGI(TAG_MAIN,"Sending get info...");
+    uart_write_bytes(UART_PORT_NUM, (const char *) LIDAR_PKG_GET_INFO, 2);
+
+    ESP_LOGI(TAG_MAIN,"Receiving descriptor info...");
+    int len = uart_read_bytes(UART_PORT_NUM, data_uart, 7, lidar_init_ms_timeout / portTICK_PERIOD_MS);
+    if (len == 7){
+        if(memcmp(data_uart, LIDAR_PKG_GET_INFO_DESCRIPTOR, len) == 0){
+            ESP_LOGI(TAG_MAIN,"Descriptor info is good!");
+            //TODO
+            return DRIVER_RET_OK;
+        } else {
+            ESP_LOGE(TAG_MAIN,"Receive 7 bytes but descriptor info is bad...");
+            ESP_LOGI(TAG_MAIN,"Receive: ");
+            ESP_LOG_BUFFER_HEXDUMP(TAG_MAIN, data_uart, len, ESP_LOG_INFO);
+            ESP_LOGI(TAG_MAIN,"Expected: ");
+            ESP_LOG_BUFFER_HEXDUMP(TAG_MAIN, LIDAR_PKG_GET_INFO_DESCRIPTOR, len, ESP_LOG_INFO);
+            return DRIVER_RET_ERROR;
+        }
+    } else {
+        ESP_LOGE(TAG_MAIN,"Error on receiving descriptor info! > no uart response...");
+        return DRIVER_RET_ERROR;
+    }
+    free(data_uart);
+}
+
+driver_ret_t get_health_lidar(){
+    uint8_t *data_uart = (uint8_t *) malloc(8);
+
+    stop_scan_lidar();
 
     //read health
     uart_flush(UART_PORT_NUM);
-    ESP_LOGI(TAG,"Sending get health...");
+    ESP_LOGI(TAG_MAIN,"Sending get health...");
     uart_write_bytes(UART_PORT_NUM, (const char *) LIDAR_PKG_GET_HEALTH, 2);
 
-    ESP_LOGI(TAG,"Receiving health descriptor...");
-    int len = uart_read_bytes(UART_PORT_NUM, data_uart, (uart_buffer_size - 1), lidar_init_ms_timeout / portTICK_PERIOD_MS); //(BUF_SIZE - 1)
-    ESP_LOG_BUFFER_HEXDUMP(TAG, data_uart, len, ESP_LOG_INFO);
-    //ESP_LOGI(TAG, "Len: %d | BUFFER: %02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X", len, data_uart[0],data_uart[1],data_uart[2],data_uart[3],data_uart[4],data_uart[5],data_uart[6],data_uart[7],data_uart[8],data_uart[9]);
-    if (len >= 7){
-        if((data_uart[0] == 0xA5) && (data_uart[1] == 0x5A) && (data_uart[2] == 0x03) && (data_uart[3] == 0x00) && (data_uart[4] == 0x00) && (data_uart[5] == 0x00) && (data_uart[6] == 0x06)){
-            ESP_LOGI(TAG,"Health descriptor is good!");
+    ESP_LOGI(TAG_MAIN,"Receiving health descriptor...");
+    int len = uart_read_bytes(UART_PORT_NUM, data_uart, 7, lidar_init_ms_timeout / portTICK_PERIOD_MS);
+    if (len == 7){
+        if(memcmp(data_uart, LIDAR_PKG_GET_HEALTH_DESCRIPTOR, len) == 0){
+            ESP_LOGI(TAG_MAIN,"Health descriptor is good!");
+            len = uart_read_bytes(UART_PORT_NUM, data_uart, 3, lidar_init_ms_timeout / portTICK_PERIOD_MS);
+            //TODO
+            return DRIVER_RET_OK;
         } else {
-            ESP_LOGE(TAG,"Receive more than 7 bytes but health descriptor is bad...");
+            ESP_LOGE(TAG_MAIN,"Receive 7 bytes but health descriptor is bad...");
+            ESP_LOGI(TAG_MAIN,"Receive: ");
+            ESP_LOG_BUFFER_HEXDUMP(TAG_MAIN, data_uart, len, ESP_LOG_INFO);
+            ESP_LOGI(TAG_MAIN,"Expected: ");
+            ESP_LOG_BUFFER_HEXDUMP(TAG_MAIN, LIDAR_PKG_GET_HEALTH_DESCRIPTOR, len, ESP_LOG_INFO);
+            return DRIVER_RET_ERROR;
         }
     } else {
-        ESP_LOGE(TAG,"Error on receiving health descriptor! > Initing attempts...");
-        uint8_t attempts = 0;
-        while ((data_uart[0] != 0xA5) && (data_uart[1] != 0x5A) && (data_uart[2] != 0x03) && (data_uart[3] != 0x00) && (data_uart[4] != 0x00) && (data_uart[5] != 0x00) && (data_uart[6] != 0x06)){
-            ESP_LOGW(TAG,"Trying again: %d", attempts);
-            attempts++;
-            ESP_LOGI(TAG,"Sending secund get health...");
-            uart_flush(UART_PORT_NUM);
-            uart_write_bytes(UART_PORT_NUM, (const char *) LIDAR_PKG_GET_HEALTH, 2);
-
-            ESP_LOGI(TAG,"Receiving health descriptor...");
-            len = uart_read_bytes(UART_PORT_NUM, data_uart, (uart_buffer_size - 1), lidar_init_ms_timeout / portTICK_PERIOD_MS); //(BUF_SIZE - 1)
-            ESP_LOG_BUFFER_HEXDUMP(TAG, data_uart, len, ESP_LOG_INFO);
-            //ESP_LOGI(TAG, "Len: %d | BUFFER: %02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X", len, data_uart[0],data_uart[1],data_uart[2],data_uart[3],data_uart[4],data_uart[5],data_uart[6],data_uart[7],data_uart[8],data_uart[9]);
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        ESP_LOGI(TAG,"Health descriptor is good! > Continuing...");
+        ESP_LOGE(TAG_MAIN,"Error on receiving health descriptor! > no uart response...");
+        return DRIVER_RET_ERROR;
     }
     free(data_uart);
 }
 
-void start_scan_lidar(){
+driver_ret_t start_scan_lidar(){
     uint8_t *data_uart = (uint8_t *) malloc(uart_buffer_size);
+
+    stop_scan_lidar();
 
     //start scan
     uart_flush(UART_PORT_NUM);
-    ESP_LOGI(TAG,"Sending start scan...");
+    ESP_LOGI(TAG_MAIN,"Sending start scan...");
     uart_write_bytes(UART_PORT_NUM, (const char *) LIDAR_PKG_START_SCAN, 2);
 
-    ESP_LOGI(TAG,"Receiving scan descriptor...");
+    ESP_LOGI(TAG_MAIN,"Receiving scan descriptor...");
     int len = uart_read_bytes(UART_PORT_NUM, data_uart, (uart_buffer_size - 1), lidar_init_ms_timeout / portTICK_PERIOD_MS); //(BUF_SIZE - 1)
-    ESP_LOG_BUFFER_HEXDUMP(TAG, data_uart, len, ESP_LOG_INFO);
-    //ESP_LOGI(TAG, "Len: %d | BUFFER: %02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X", len, data_uart[0],data_uart[1],data_uart[2],data_uart[3],data_uart[4],data_uart[5],data_uart[6],data_uart[7],data_uart[8],data_uart[9]);
-    if (len >= 7){
-        if((data_uart[0] == 0xA5) && (data_uart[1] == 0x5A) && (data_uart[2] == 0x05) && (data_uart[3] == 0x00) && (data_uart[4] == 0x00) && (data_uart[5] == 0x40) && (data_uart[6] == 0x81)){
-            ESP_LOGI(TAG,"Scan descriptor is good!");
-            ESP_LOGI(TAG,"Scan started!");
+    if (len == 7){
+        if(memcmp(data_uart, LIDAR_PKG_START_SCAN_DESCRIPTOR, len) == 0){
+            ESP_LOGI(TAG_MAIN,"Scan descriptor is good!");
+            ESP_LOGI(TAG_MAIN,"Scan started!");
+            return DRIVER_RET_OK;
         } else {
-            ESP_LOGE(TAG,"Receive more than 7 bytes but scan descriptor is bad...");
+            ESP_LOGE(TAG_MAIN,"Receive more than 7 bytes but scan descriptor is bad...");
+            ESP_LOGI(TAG_MAIN,"Receive: ");
+            ESP_LOG_BUFFER_HEXDUMP(TAG_MAIN, data_uart, len, ESP_LOG_INFO);
+            ESP_LOGI(TAG_MAIN,"Expected: ");
+            ESP_LOG_BUFFER_HEXDUMP(TAG_MAIN, LIDAR_PKG_START_SCAN_DESCRIPTOR, len, ESP_LOG_INFO);
+            return DRIVER_RET_ERROR;
         }
     } else {
-        ESP_LOGE(TAG,"Error on receiving scan descriptor! > Restarting esp32");
-        vTaskDelay(pdMS_TO_TICKS(15000));
-        esp_restart();
+        ESP_LOGE(TAG_MAIN,"Error on receiving scan descriptor! > Restarting esp32");
+        return DRIVER_RET_ERROR;
     }
     free(data_uart);
 }
 
+void stop_scan_lidar(){
+    //stopt scan
+    ESP_LOGI(TAG_MAIN,"Sending start scan...");
+    uart_flush(UART_PORT_NUM);
+    uart_write_bytes(UART_PORT_NUM, (const char *) LIDAR_PKG_STOP_SCAN, 2);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    uart_flush(UART_PORT_NUM);
+}
+
 void lidar_task(void * arg){
-    gpio_reset_pin(GPIO_LIDAR_PWM);
-    gpio_set_direction(GPIO_LIDAR_PWM, GPIO_MODE_OUTPUT);
-    gpio_set_pull_mode(GPIO_LIDAR_PWM, GPIO_FLOATING);
-    gpio_set_level(GPIO_LIDAR_PWM, 1);
 
     uart_config_t uart_config = {
         .baud_rate = UART_BAUD_RATE,
@@ -148,17 +218,17 @@ void lidar_task(void * arg){
     ESP_ERROR_CHECK(uart_driver_install(UART_PORT_NUM, uart_buffer_size, uart_buffer_size, uart_queue_size, &uart_queue, intr_alloc_flags));
     ESP_ERROR_CHECK(uart_param_config(UART_PORT_NUM, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(UART_PORT_NUM, UART_GPIO_TX, UART_GPIO_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
-    uart_set_rx_timeout(UART_PORT_NUM, 1); //  set MBB = 1 symbol time on current baudrate
+    uart_set_rx_timeout(UART_PORT_NUM, 1);
     uart_set_always_rx_timeout(UART_PORT_NUM, true);
     uart_flush(UART_PORT_NUM);
 
-    ESP_LOGW(TAG, "Waiting for semaphore from uROS boot");
+    ESP_LOGW(TAG_MAIN, "Waiting for semaphore from uROS boot");
     xSemaphoreTake(uros_boot_lidar, portMAX_DELAY);
-    ESP_LOGI(TAG, "Resuming semaphore...");
+    ESP_LOGI(TAG_MAIN, "Resuming semaphore...");
 
     init_lidar();
 
-    start_scan_lidar();
+    CHECKDRIVER(start_scan_lidar());
 
     uint16_t measures = 0;
     uint8_t *data_scan = (uint8_t *) malloc(10);
@@ -179,15 +249,15 @@ void lidar_task(void * arg){
 
                     if ((uart_len == 3) && (angle >= 0) && (angle <= 360)){
                         if (((new_scan_flag == 1) && (range >= 0) && (range <= msgs_laserscan.range_max)) || measures >= 360) {
-                            //ESP_LOGI(TAG,"Last measure > Flag: %d | Quality: %02d | Angle: %3.8f | Angle_i: %03d | Range: %2.8f", new_scan_flag, quality, angle, angle_index, range);
-                            //ESP_LOGI(TAG,"Package > Measures: %3d", measures);
+                            //ESP_LOGI(TAG_MAIN,"Last measure > Flag: %d | Quality: %02d | Angle: %3.8f | Angle_i: %03d | Range: %2.8f", new_scan_flag, quality, angle, angle_index, range);
+                            //ESP_LOGI(TAG_MAIN,"Package > Measures: %3d", measures);
                             msgs_laserscan.ranges.data[angle_index] = range;
                             lidar_pub_callback();
                             new_scan_flag = 0;
                             measures = 0;
                             timestamp_update(&msgs_laserscan);
                         } else if ((new_scan_flag == 0) && (range > 0) && (range <= msgs_laserscan.range_max) && (range >= msgs_laserscan.range_min)) {
-                            //ESP_LOGI(TAG,"Measure > Quality: %02d | Angle: %3.8f | Angle_i: %03d | Range: %2.8f", quality, angle, angle_index, range);
+                            //ESP_LOGI(TAG_MAIN,"Measure > Quality: %02d | Angle: %3.8f | Angle_i: %03d | Range: %2.8f", quality, angle, angle_index, range);
                             measures++;
                             msgs_laserscan.ranges.data[angle_index] = range;
                         }
@@ -197,6 +267,6 @@ void lidar_task(void * arg){
             }
         }
     }
-    ESP_LOGE(TAG, "Task Delete");
+    ESP_LOGE(TAG_MAIN, "Task Delete");
     vTaskDelete(NULL);
 }

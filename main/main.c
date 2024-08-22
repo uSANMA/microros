@@ -19,9 +19,9 @@
 
 #include "esp_sntp.h"
 
-static const char *TAG = "NETWORK";
-static const char *TAG1 = "APP_MAIN";
-static const char *TAG2 = "NTP";
+static const char *TAG_NET = "NETWORK";
+static const char *TAG_MAIN = "APP_MAIN";
+static const char *TAG_NTP = "NTP";
 
 extern void uros_task(void *);
 extern void sensors_task(void *);
@@ -52,14 +52,14 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         if (s_retry_num < CONFIG_ESP_MAXIMUM_RETRY) {
             esp_wifi_connect();
             s_retry_num++;
-            ESP_LOGW(TAG, "Trying again");
+            ESP_LOGW(TAG_NET, "Trying again");
         } else {
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         }
-        ESP_LOGE(TAG,"Connection fail");
+        ESP_LOGE(TAG_NET,"Connection fail");
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "IP: " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG_NET, "IP: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
@@ -113,10 +113,10 @@ void wifi_init_sta(void) {
     esp_efuse_mac_get_default(mac_base);
     esp_read_mac(mac_base, ESP_MAC_WIFI_STA);
     esp_derive_local_mac(mac_local_base, mac_uni_base);
-    ESP_LOGI(TAG, "MAC BASE: %02X:%02X:%02X:%02X:%02X:%02X", mac_base[0],mac_base[1],mac_base[2],mac_base[3],mac_base[4],mac_base[5]);
-    ESP_LOGI(TAG, "MAC LOCAL BASE: %02X:%02X:%02X:%02X:%02X:%02X", mac_local_base[0],mac_local_base[1],mac_local_base[2],\
+    ESP_LOGI(TAG_NET, "MAC BASE: %02X:%02X:%02X:%02X:%02X:%02X", mac_base[0],mac_base[1],mac_base[2],mac_base[3],mac_base[4],mac_base[5]);
+    ESP_LOGI(TAG_NET, "MAC LOCAL BASE: %02X:%02X:%02X:%02X:%02X:%02X", mac_local_base[0],mac_local_base[1],mac_local_base[2],\
     mac_local_base[3],mac_local_base[4],mac_local_base[5]);
-    ESP_LOGI(TAG, "MAC uni: %02X:%02X:%02X:%02X:%02X:%02X", mac_uni_base[0],mac_uni_base[1],mac_uni_base[2],\
+    ESP_LOGI(TAG_NET, "MAC uni: %02X:%02X:%02X:%02X:%02X:%02X", mac_uni_base[0],mac_uni_base[1],mac_uni_base[2],\
     mac_uni_base[3],mac_uni_base[4],mac_uni_base[5]);
 
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
@@ -126,13 +126,13 @@ void wifi_init_sta(void) {
             portMAX_DELAY);
 
     if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Connected in SSID: %s",
+        ESP_LOGI(TAG_NET, "Connected in SSID: %s",
                  CONFIG_ESP_WIFI_SSID);
     } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGW(TAG, "Connection fail: %s",
+        ESP_LOGW(TAG_NET, "Connection fail: %s",
                  CONFIG_ESP_WIFI_PASSWORD);
     } else {
-        ESP_LOGE(TAG, "Error on Wi-fi connection!");
+        ESP_LOGE(TAG_NET, "Error on Wi-fi connection!");
         vTaskDelay(pdMS_TO_TICKS(5000));
         esp_restart();
     }
@@ -147,7 +147,7 @@ void print_time(){
     char time_buffer[50];
 
     strftime(time_buffer, sizeof(time_buffer), "%c", time_info);
-    ESP_LOGI(TAG2, "%s", time_buffer);
+    ESP_LOGI(TAG_NTP, "%s", time_buffer);
 }
 
 void on_got_time(struct timeval *tv){
@@ -173,7 +173,8 @@ void timestamp_update(void *arg){
 }
 
 void app_main(void) {
-    ESP_LOGI(TAG1, "--------------- MCU begin ---------------");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    ESP_LOGI(TAG_MAIN, "--------------- MCU begin ---------------");
 
     got_time_semaphore = xSemaphoreCreateBinary();
 
@@ -199,10 +200,10 @@ void app_main(void) {
     esp_sntp_setservername(0, "pool.ntp.org");
     esp_sntp_set_time_sync_notification_cb(on_got_time);
 
-    ESP_LOGI(TAG1, "Waiting for sync real time");
+    ESP_LOGI(TAG_MAIN, "Waiting for sync real time");
     xSemaphoreTake(got_time_semaphore, portMAX_DELAY);
 
-    ESP_LOGI(TAG1, "Creating xTasks");
+    ESP_LOGI(TAG_MAIN, "Creating xTasks");
     xTaskCreate(uros_task, "uROS Task", 1024*6, NULL, 5, NULL);
     xTaskCreate(sensors_task, "Sensors Task", 1024*4, NULL, 4, NULL);
     xTaskCreate(motorscontrol_task, "Motor Control Task", 1024*4, NULL, 4, NULL);

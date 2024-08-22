@@ -44,7 +44,7 @@
 		}                                                                                                   \
 	}
 
-static const char *TAG = "uROS";
+static const char *TAG_MAIN = "Task-uROS";
 
 void uros_task(void *argument);
 void cmdvel_sub_callback(const void *);
@@ -258,7 +258,7 @@ static const int n_handles_sub = 1; //number of handles that will be added in ex
 
 void cmdvel_sub_callback(const void *msgin) {
     geometry_msgs__msg__TwistStamped *msgs_cmdvel = (geometry_msgs__msg__TwistStamped *) msgin;
-    //ESP_LOGI(TAG,"Received: %ld", msgs_cmdvel_temp->header.stamp.sec);
+    //ESP_LOGI(TAG_MAIN,"Received: %ld", msgs_cmdvel_temp->header.stamp.sec);
 }
 
 void motorcontrol_pub_callback() {
@@ -275,12 +275,11 @@ void sensors_pub_callback() {
 }
 
 void lidar_pub_callback() {
-    ESP_LOGI(TAG,"Sending to ROS2");
     CHECK(rcl_publish(&pub_msgs_laserscan, &msgs_laserscan, &laserscan_allocation));
 }
 
 void init_msgs_encoders(){
-    ESP_LOGI(TAG,"Init_JointState configured");
+    ESP_LOGI(TAG_MAIN,"Init_JointState configured");
     rosidl_runtime_c__String__Sequence__init(&msgs_encoders_name_sequence, 2);
     msgs_encoders.name = msgs_encoders_name_sequence;
     rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[0], (const char *)"Right_motor", 12);
@@ -310,7 +309,7 @@ void init_msgs_encoders(){
     }
 
 void init_msgs_imu(){
-    ESP_LOGI(TAG,"Init_Imu configured");
+    ESP_LOGI(TAG_MAIN,"Init_Imu configured");
     msgs_imu.header.frame_id.capacity = 4;
     msgs_imu.header.frame_id.size = 3;
     msgs_imu.header.frame_id.data = (char*) malloc(msgs_imu.header.frame_id.capacity * sizeof(char));
@@ -320,7 +319,7 @@ void init_msgs_imu(){
 }
 
 void init_msgs_temperature(){
-    ESP_LOGI(TAG,"Init_Temperature configured");
+    ESP_LOGI(TAG_MAIN,"Init_Temperature configured");
     msgs_temperature.header.frame_id.capacity = 14;
     msgs_temperature.header.frame_id.size = 13;
     msgs_temperature.header.frame_id.data = (char*) malloc(msgs_temperature.header.frame_id.capacity * sizeof(char));
@@ -330,7 +329,7 @@ void init_msgs_temperature(){
 }
 
 void init_msgs_batterypack(){
-    ESP_LOGI(TAG,"Init_BatteryState configured");
+    ESP_LOGI(TAG_MAIN,"Init_BatteryState configured");
     msgs_batterypack.header.frame_id.capacity = 12;
     msgs_batterypack.header.frame_id.size = 11;
     msgs_batterypack.header.frame_id.data = (char*) malloc(msgs_batterypack.header.frame_id.capacity * sizeof(char));
@@ -383,16 +382,16 @@ rcl_ret_t init_ping_struct(){
 }
 
 void ping_agent(){
-    ESP_LOGW(TAG,"Searching agent...");
+    ESP_LOGW(TAG_MAIN,"Searching agent...");
     rcl_ret_t rc = init_ping_struct();
 
     if (RMW_RET_OK == rc) { //timeout_ms, attempts
-        ESP_LOGI(TAG,"Agent found!");
+        ESP_LOGI(TAG_MAIN,"Agent found!");
     } else {
         int uros_agent_attempts = 0;
-        ESP_LOGE(TAG,"Error on searching for agent");
+        ESP_LOGE(TAG_MAIN,"Error on searching for agent");
         while (RMW_RET_OK != rc) {
-            ESP_LOGW(TAG,"Trying again: %d", uros_agent_attempts);
+            ESP_LOGW(TAG_MAIN,"Trying again: %d", uros_agent_attempts);
             rc = init_ping_struct();
             uros_agent_attempts++;
             if (uros_agent_attempts >= 300){esp_restart();}
@@ -401,11 +400,11 @@ void ping_agent(){
 
         rc = init_ping_struct();
         if (RMW_RET_OK == rc) { //timeout_ms, attempts
-            ESP_LOGI(TAG,"Connection with agent established!");
-            ESP_LOGI(TAG,"Resuming...");
+            ESP_LOGI(TAG_MAIN,"Connection with agent established!");
+            ESP_LOGI(TAG_MAIN,"Resuming...");
         } else {
-            ESP_LOGE(TAG,"Impossible to find agent");
-            ESP_LOGE(TAG,"Unstable connection! > Aborting");
+            ESP_LOGE(TAG_MAIN,"Impossible to find agent");
+            ESP_LOGE(TAG_MAIN,"Unstable connection! > Aborting");
             esp_restart();
         }
     }
@@ -454,7 +453,7 @@ void uros_task(void * arg) {
         "uWABA_node", 
         "", 
         &support));
-    ESP_LOGI(TAG,"Node created");
+    ESP_LOGI(TAG_MAIN,"Node created");
 
     const rosidl_message_type_support_t * type_support_msgs_encoders = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState);
     CHECK(rclc_publisher_init_best_effort(
@@ -462,7 +461,7 @@ void uros_task(void * arg) {
         &node, 
         type_support_msgs_encoders,
         "micro_encoders"));
-    ESP_LOGI(TAG,"Encoder publisher created");
+    ESP_LOGI(TAG_MAIN,"Encoder publisher created");
 
     const rosidl_message_type_support_t * type_support_msgs_imu = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu);
     CHECK(rclc_publisher_init_best_effort(
@@ -470,7 +469,7 @@ void uros_task(void * arg) {
         &node, 
         type_support_msgs_imu,
         "micro_imu"));
-    ESP_LOGI(TAG,"IMU publisher created");
+    ESP_LOGI(TAG_MAIN,"IMU publisher created");
 
     const rosidl_message_type_support_t * type_support_msgs_temperature = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Temperature);
     CHECK(rclc_publisher_init_best_effort(
@@ -478,7 +477,7 @@ void uros_task(void * arg) {
         &node, 
         type_support_msgs_temperature,
         "micro_temperature"));
-    ESP_LOGI(TAG,"Temperature publisher created");
+    ESP_LOGI(TAG_MAIN,"Temperature publisher created");
 
     const rosidl_message_type_support_t * type_support_msgs_batterypack = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, BatteryState);
     CHECK(rclc_publisher_init_best_effort(
@@ -486,7 +485,7 @@ void uros_task(void * arg) {
         &node, 
         type_support_msgs_batterypack,
         "micro_batterypack"));
-    ESP_LOGI(TAG,"Batterypack publisher created");
+    ESP_LOGI(TAG_MAIN,"Batterypack publisher created");
 
     const rosidl_message_type_support_t *type_support_msgs_laserscan = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan);
     CHECK(rclc_publisher_init_best_effort(
@@ -494,7 +493,7 @@ void uros_task(void * arg) {
         &node, 
         type_support_msgs_laserscan,
         "micro_laserscan"));
-    ESP_LOGI(TAG,"Laserscan publisher created");
+    ESP_LOGI(TAG_MAIN,"Laserscan publisher created");
 
     const rosidl_message_type_support_t * type_support_msgs_cmdvel = ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, TwistStamped);
     CHECK(rclc_subscription_init_best_effort(
@@ -502,7 +501,7 @@ void uros_task(void * arg) {
 		&node,
 		type_support_msgs_cmdvel,
 		"uwaba_controller_server_node/cmd_vel"));
-    ESP_LOGI(TAG,"CmdVel subscriber created");
+    ESP_LOGI(TAG_MAIN,"CmdVel subscriber created");
 
     CHECK(rclc_executor_init(&executor_sub_msgs, &support.context, n_handles_sub, &allocator)); 
 	CHECK(rclc_executor_init(&executor_pub_msgs, &support.context, n_handles_pub, &allocator));
@@ -516,11 +515,11 @@ void uros_task(void * arg) {
     while(1){
         CHECK(rclc_executor_spin_some(&executor_sub_msgs, RCL_MS_TO_NS(35)));
         CHECK(rclc_executor_spin_some(&executor_pub_msgs, RCL_MS_TO_NS(35)));
-        //ESP_LOGI(TAG,"Executor spin");
+        //ESP_LOGI(TAG_MAIN,"Executor spin");
         taskYIELD();
     }
 
-    ESP_LOGI(TAG,"Clear memory");
+    ESP_LOGI(TAG_MAIN,"Clear memory");
     CHECK(rclc_executor_fini(&executor_sub_msgs));
     CHECK(rclc_executor_fini(&executor_pub_msgs));
 
@@ -544,6 +543,6 @@ void uros_task(void * arg) {
     // std_msgs__msg__String__fini(&pub_msg);
     // std_msgs__msg__String__fini(&sub_msg);
 
-    ESP_LOGE(TAG, "Task Delete");
+    ESP_LOGE(TAG_MAIN, "Task Delete");
     vTaskDelete(NULL);
 }

@@ -16,7 +16,7 @@
 #include "bdc_motor.h"
 #include "pid_ctrl.h"
 
-static const char *TAG = "MotorControl";
+static const char *TAG_MAIN = "Task-MotorControl";
 
 //CT voltage = MotorCurrent * 0.155
 
@@ -50,8 +50,9 @@ char orientation_motorb = 'F';
 uint8_t orientation_loop = 0;
 
 const float wheels_separation = 0.13607;
-const float reduction_radio = 18.8;
+const float reduction_ratio = 18.8;
 const float wheels_separation2 = 9.4;
+const uint8_t encoder_ticks = 10; 
 
 typedef struct {
     bdc_motor_handle_t motor;
@@ -91,33 +92,33 @@ void motorscontrol_task(void *arg){
 
     timer_motorcontrol = xSemaphoreCreateBinary();
 
-    ESP_LOGI(TAG, "Motor A Config");
+    ESP_LOGI(TAG_MAIN, "Motor A Config");
     bdc_motor_config_t motor_config_a = {
         .pwm_freq_hz = MCPWM_FREQ_HZ,
         .pwma_gpio_num = MCPWM_GPIO_A1,
         .pwmb_gpio_num = MCPWM_GPIO_A2,
     };
 
-    ESP_LOGI(TAG, "Motor B Config");
+    ESP_LOGI(TAG_MAIN, "Motor B Config");
     bdc_motor_config_t motor_config_b = {
         .pwm_freq_hz = MCPWM_FREQ_HZ,
         .pwma_gpio_num = MCPWM_GPIO_B1,
         .pwmb_gpio_num = MCPWM_GPIO_B2,
     };
 
-    ESP_LOGI(TAG, "MCPWM Config");
+    ESP_LOGI(TAG_MAIN, "MCPWM Config");
     bdc_motor_mcpwm_config_t mcpwm_config_a = {
         .group_id = 0,
         .resolution_hz = MCPWM_TIMER_RESOLUTION_HZ,
     };
 
-    ESP_LOGI(TAG, "MCPWM Config");
+    ESP_LOGI(TAG_MAIN, "MCPWM Config");
     bdc_motor_mcpwm_config_t mcpwm_config_b = {
         .group_id = 1,
         .resolution_hz = MCPWM_TIMER_RESOLUTION_HZ,
     };
 
-    ESP_LOGI(TAG, "Create new motors devices");
+    ESP_LOGI(TAG_MAIN, "Create new motors devices");
     bdc_motor_handle_t motor_a = NULL;
     bdc_motor_handle_t motor_b = NULL;
     ESP_ERROR_CHECK(bdc_motor_new_mcpwm_device(&motor_config_a, &mcpwm_config_a, &motor_a));
@@ -125,14 +126,14 @@ void motorscontrol_task(void *arg){
     motor_ctrl_ctx_a.motor = motor_a;
     motor_ctrl_ctx_b.motor = motor_b;
 
-    ESP_LOGI(TAG, "Init pcnt driver to decode A rotary signal");
+    ESP_LOGI(TAG_MAIN, "Init pcnt driver to decode A rotary signal");
     pcnt_unit_config_t unit_config_a = {
         .high_limit = ENCODER_PCNT_HIGH_LIMIT_A,
         .low_limit = ENCODER_PCNT_LOW_LIMIT_A,
         .flags.accum_count = true,
     };
 
-    ESP_LOGI(TAG, "Init pcnt driver to decode B rotary signal");
+    ESP_LOGI(TAG_MAIN, "Init pcnt driver to decode B rotary signal");
     pcnt_unit_config_t unit_config_b = {
         .high_limit = ENCODER_PCNT_HIGH_LIMIT_B,
         .low_limit = ENCODER_PCNT_LOW_LIMIT_B,
@@ -151,7 +152,7 @@ void motorscontrol_task(void *arg){
     ESP_ERROR_CHECK(pcnt_unit_set_glitch_filter(pcnt_unit_a, &filter_config));
     ESP_ERROR_CHECK(pcnt_unit_set_glitch_filter(pcnt_unit_b, &filter_config));
 
-    ESP_LOGI(TAG, "Encoder A config channel");
+    ESP_LOGI(TAG_MAIN, "Encoder A config channel");
     pcnt_chan_config_t chan_e1a_config = { //config encoder 1 from A motor
         .edge_gpio_num = ENCODER_GPIO_A1,
         .level_gpio_num = ENCODER_GPIO_A2,
@@ -166,7 +167,7 @@ void motorscontrol_task(void *arg){
     pcnt_channel_handle_t pcnt_chan_e2a = NULL;
     ESP_ERROR_CHECK(pcnt_new_channel(pcnt_unit_a, &chan_e2a_config, &pcnt_chan_e2a));
 
-    ESP_LOGI(TAG, "Encoder B config channel");
+    ESP_LOGI(TAG_MAIN, "Encoder B config channel");
     pcnt_chan_config_t chan_e1b_config = { //config encoder 1 from B motor
         .edge_gpio_num = ENCODER_GPIO_B1,
         .level_gpio_num = ENCODER_GPIO_B2,
@@ -181,7 +182,7 @@ void motorscontrol_task(void *arg){
     pcnt_channel_handle_t pcnt_chan_e2b = NULL;
     ESP_ERROR_CHECK(pcnt_new_channel(pcnt_unit_b, &chan_e2b_config, &pcnt_chan_e2b));
 
-    ESP_LOGI(TAG, "Encoder A config edge");
+    ESP_LOGI(TAG_MAIN, "Encoder A config edge");
     ESP_ERROR_CHECK(pcnt_channel_set_edge_action(pcnt_chan_e1a, PCNT_CHANNEL_EDGE_ACTION_DECREASE, PCNT_CHANNEL_EDGE_ACTION_INCREASE));
     ESP_ERROR_CHECK(pcnt_channel_set_level_action(pcnt_chan_e1a, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_INVERSE));
     ESP_ERROR_CHECK(pcnt_channel_set_edge_action(pcnt_chan_e2a, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_DECREASE));
@@ -193,7 +194,7 @@ void motorscontrol_task(void *arg){
     ESP_ERROR_CHECK(pcnt_unit_start(pcnt_unit_a));
     motor_ctrl_ctx_a.pcnt_encoder = pcnt_unit_a;
 
-    ESP_LOGI(TAG, "Encoder B config edge");
+    ESP_LOGI(TAG_MAIN, "Encoder B config edge");
     ESP_ERROR_CHECK(pcnt_channel_set_edge_action(pcnt_chan_e1b, PCNT_CHANNEL_EDGE_ACTION_DECREASE, PCNT_CHANNEL_EDGE_ACTION_INCREASE));
     ESP_ERROR_CHECK(pcnt_channel_set_level_action(pcnt_chan_e1b, PCNT_CHANNEL_LEVEL_ACTION_KEEP, PCNT_CHANNEL_LEVEL_ACTION_INVERSE));
     ESP_ERROR_CHECK(pcnt_channel_set_edge_action(pcnt_chan_e2b, PCNT_CHANNEL_EDGE_ACTION_INCREASE, PCNT_CHANNEL_EDGE_ACTION_DECREASE));
@@ -205,7 +206,7 @@ void motorscontrol_task(void *arg){
     ESP_ERROR_CHECK(pcnt_unit_start(pcnt_unit_b));
     motor_ctrl_ctx_b.pcnt_encoder = pcnt_unit_b;
 
-    ESP_LOGI(TAG, "PID config constants");
+    ESP_LOGI(TAG_MAIN, "PID config constants");
     pid_ctrl_parameter_t pid_runtime_param = {
         .kp = 0.6,
         .ki = 0.4,
@@ -219,7 +220,7 @@ void motorscontrol_task(void *arg){
     pid_ctrl_config_t pid_config = {
         .init_param = pid_runtime_param,
     };
-    ESP_LOGI(TAG, "Config PID control blocks");
+    ESP_LOGI(TAG_MAIN, "Config PID control blocks");
     pid_ctrl_block_handle_t pid_ctrl_a = NULL;
     pid_ctrl_block_handle_t pid_ctrl_b = NULL;
     ESP_ERROR_CHECK(pid_new_control_block(&pid_config, &pid_ctrl_a));
@@ -227,14 +228,14 @@ void motorscontrol_task(void *arg){
     motor_ctrl_ctx_a.pid_ctrl = pid_ctrl_a;
     motor_ctrl_ctx_b.pid_ctrl = pid_ctrl_b;
 
-    ESP_LOGW(TAG, "Waiting semaphore from uROS boot");
+    ESP_LOGW(TAG_MAIN, "Waiting semaphore from uROS boot");
     xSemaphoreTake(uros_boot_motorcontrol, portMAX_DELAY);
-    ESP_LOGI(TAG, "Resuming semaphore...");
+    ESP_LOGI(TAG_MAIN, "Resuming semaphore...");
 
-    ESP_LOGI(TAG, "Enable motor A");
+    ESP_LOGI(TAG_MAIN, "Enable motor A");
     ESP_ERROR_CHECK(bdc_motor_enable(motor_a));
 
-    ESP_LOGI(TAG, "Enable motor B");
+    ESP_LOGI(TAG_MAIN, "Enable motor B");
     ESP_ERROR_CHECK(bdc_motor_enable(motor_b));
 
     bdc_motor_set_speed(motor_a, (uint32_t)0);
@@ -243,16 +244,16 @@ void motorscontrol_task(void *arg){
     ESP_ERROR_CHECK(bdc_motor_forward(motor_a));
     ESP_ERROR_CHECK(bdc_motor_forward(motor_b));
 
-    ESP_LOGI(TAG, "Start motor speed timer loop");
+    ESP_LOGI(TAG_MAIN, "Start motor speed timer loop");
     motorcontrol_timer = xTimerCreate("PID Timer", PID_LOOP_PERIOD_MS, pdTRUE, (void *)PID_LOOP_ID, &motorcontrol_loop_cb);
     if(motorcontrol_timer == NULL) {
-            ESP_LOGE(TAG, "PID Timer create Error!");
+            ESP_LOGE(TAG_MAIN, "PID Timer create Error!");
         } else {
-            ESP_LOGI(TAG, "PID Timer created!");
+            ESP_LOGI(TAG_MAIN, "PID Timer created!");
             if(xTimerStart(motorcontrol_timer, portMAX_DELAY) != pdPASS) {
-                ESP_LOGE(TAG, "PID Timer start error!");
+                ESP_LOGE(TAG_MAIN, "PID Timer start error!");
             } else {
-                ESP_LOGI(TAG, "PID Timer started!");
+                ESP_LOGI(TAG_MAIN, "PID Timer started!");
             }
         }
 
@@ -260,7 +261,7 @@ void motorscontrol_task(void *arg){
     while(1){
         xSemaphoreTake(timer_motorcontrol, portMAX_DELAY);
 
-        //ESP_LOGI(TAG, "PID CallBack");
+        //ESP_LOGI(TAG_MAIN, "PID CallBack");
         static int last_pulse_count_a = 0;
         static int last_pulse_count_b = 0;
         motor_control_context_t *ctx_a = (motor_control_context_t *)&motor_ctrl_ctx_a;
@@ -285,16 +286,16 @@ void motorscontrol_task(void *arg){
         ctx_b->report_pulses = real_pulses_b;
 
         // calculate the speed error
-        msgs_encoders.velocity.data[0] = real_pulses_a/188;
-        msgs_encoders.velocity.data[1] = real_pulses_b/188;
+        msgs_encoders.velocity.data[0] = real_pulses_a/(reduction_ratio*encoder_ticks);
+        msgs_encoders.velocity.data[1] = real_pulses_b/(reduction_ratio*encoder_ticks);
         if (real_pulses_a < 0){real_pulses_a = -real_pulses_a;}
         if (real_pulses_b < 0){real_pulses_b = -real_pulses_b;}
 
-        PID_EXPECT_SPEED_A = ((((float)msgs_cmdvel.twist.linear.x)*10 + 0.5*(wheels_separation * ((float)msgs_cmdvel.twist.angular.z)))) * reduction_radio;
-        PID_EXPECT_SPEED_B = ((((float)msgs_cmdvel.twist.linear.x)*10 - 0.5*(wheels_separation * ((float)msgs_cmdvel.twist.angular.z)))) * reduction_radio;
-        //ESP_LOGI(TAG, "---------------------------LOG---------------------------");
-        // ESP_LOGI(TAG, "Right: %.4f", PID_EXPECT_SPEED_A);
-        // ESP_LOGI(TAG, "Left: %.4f", PID_EXPECT_SPEED_B);
+        PID_EXPECT_SPEED_A = ((((float)msgs_cmdvel.twist.linear.x)*10 + 0.5*(wheels_separation * ((float)msgs_cmdvel.twist.angular.z)))) * reduction_ratio;
+        PID_EXPECT_SPEED_B = ((((float)msgs_cmdvel.twist.linear.x)*10 - 0.5*(wheels_separation * ((float)msgs_cmdvel.twist.angular.z)))) * reduction_ratio;
+        //ESP_LOGI(TAG_MAIN, "---------------------------LOG---------------------------");
+        // ESP_LOGI(TAG_MAIN, "Right: %.4f", PID_EXPECT_SPEED_A);
+        // ESP_LOGI(TAG_MAIN, "Left: %.4f", PID_EXPECT_SPEED_B);
 
         if ((PID_EXPECT_SPEED_A > 0) && (orientation_motora == 'R')){
             orientation_motora = 'F';

@@ -16,10 +16,10 @@
 
 #include "math.h"
 
-static const char *TAG = "Sensors";
-static const char *TAG1 = "IMU";
-static const char *TAG2 = "FG";
-static const char *TAG3 = "ESP32_SENSORS";
+static const char *TAG_MAIN = "Task-Sensors";
+static const char *TAG_IMU = "IMU";
+static const char *TAG_FG = "Fuel_Gauge";
+static const char *TAG_ESP32TEMP = "ESP32_SENSORS";
 
 #define CHECK(fn)                                                                                               \
 	{                                                                                                           \
@@ -151,7 +151,7 @@ extern sensor_msgs__msg__Temperature msgs_temperature;
 */
 
 esp_err_t temp_init(){
-    ESP_LOGI(TAG3,"Initing internal temp sensor");
+    ESP_LOGI(TAG_ESP32TEMP,"Initing internal temp sensor");
     temperature_sensor_handle_t temp_handle = NULL;
     temperature_sensor_config_t temp_sensor = {
         .range_min = 10,
@@ -163,7 +163,7 @@ esp_err_t temp_init(){
     // Get converted sensor data
     float tsens_out;
     ESP_ERROR_CHECK(temperature_sensor_get_celsius(temp_handle, &tsens_out));
-    ESP_LOGI(TAG3,"Temp: %.4f", tsens_out);
+    ESP_LOGI(TAG_ESP32TEMP,"Temp: %.4f", tsens_out);
     timestamp_update(&msgs_temperature);
     msgs_temperature.temperature = tsens_out;
     // Disable the temperature sensor if it is not needed and save the power
@@ -194,13 +194,13 @@ esp_err_t imu_read(){
 
     msgs_temperature.temperature = (((int16_t)(raw_buffer[3] << 8 | raw_buffer[2]))/512) + 23;
 
-    //ESP_LOGI(TAG1,"AX: %d", imu_data.accel_x);
-    //ESP_LOGI(TAG1,"AY: %d", imu_data.accel_y);
-    //ESP_LOGI(TAG1,"AZ: %d", imu_data.accel_z);
-    //ESP_LOGI(TAG1,"GX: %d", imu_data.gyro_x);
-    //ESP_LOGI(TAG1,"GY: %d", imu_data.gyro_y);
-    //ESP_LOGI(TAG1,"GZ: %d", imu_data.gyro_z);
-    //ESP_LOGI(TAG1,"T: %d", imu_data.temperature);
+    //ESP_LOGI(TAG_IMU,"AX: %d", imu_data.accel_x);
+    //ESP_LOGI(TAG_IMU,"AY: %d", imu_data.accel_y);
+    //ESP_LOGI(TAG_IMU,"AZ: %d", imu_data.accel_z);
+    //ESP_LOGI(TAG_IMU,"GX: %d", imu_data.gyro_x);
+    //ESP_LOGI(TAG_IMU,"GY: %d", imu_data.gyro_y);
+    //ESP_LOGI(TAG_IMU,"GZ: %d", imu_data.gyro_z);
+    //ESP_LOGI(TAG_IMU,"T: %d", imu_data.temperature);
 
     return ESP_OK;
 }
@@ -212,14 +212,14 @@ esp_err_t imu_softreset(){
 }
 
 esp_err_t imu_init(){
-    ESP_LOGI(TAG1,"Initing IMU");
+    ESP_LOGI(TAG_IMU,"Initing IMU");
     volatile uint8_t rt_buffer[4];
     CHECK(i2c_master_transmit_receive(imu_handle,  &IMU_CHIP_ID_REG, 1, (uint8_t *)&rt_buffer, 4, I2C_TIMEOUT_MS));
     if (rt_buffer[2] == (uint8_t)IMU_CHIP_ID_RESET){
-        ESP_LOGI(TAG1,"CHIP_ID match on 0x43!");
+        ESP_LOGI(TAG_IMU,"CHIP_ID match on 0x43!");
         CHECK(imu_softreset());
     } else {
-        ESP_LOGE(TAG1,"ERROR ON CHIP_ID");
+        ESP_LOGE(TAG_IMU,"ERROR ON CHIP_ID");
         return ESP_FAIL;
     }
 
@@ -228,13 +228,13 @@ esp_err_t imu_init(){
         CHECK(i2c_master_transmit(imu_handle, (uint8_t *)&IMU_ACC_CONF, 3, I2C_TIMEOUT_MS));
         CHECK(i2c_master_transmit_receive(imu_handle,  &IMU_ACC_CONF_REG, 1, (uint8_t *)&rt_buffer, 4, I2C_TIMEOUT_MS));
         if (rt_buffer[3] == IMU_ACC_CONF[2] && rt_buffer[2] == IMU_ACC_CONF[1]){
-            ESP_LOGI(TAG1,"ACC config ready!");
+            ESP_LOGI(TAG_IMU,"ACC config ready!");
         } else {
-             ESP_LOGE(TAG1,"ERROR ON ACC SET VALUE");
+             ESP_LOGE(TAG_IMU,"ERROR ON ACC SET VALUE");
             return ESP_FAIL;
         }
     } else {
-        ESP_LOGE(TAG1,"ERROR ON ACC RESET VALUE");
+        ESP_LOGE(TAG_IMU,"ERROR ON ACC RESET VALUE");
         return ESP_FAIL;
     }
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -244,13 +244,13 @@ esp_err_t imu_init(){
         CHECK(i2c_master_transmit(imu_handle, (uint8_t *)&IMU_GYR_CONF, 3, I2C_TIMEOUT_MS));
         CHECK(i2c_master_transmit_receive(imu_handle,  &IMU_GYR_CONF_REG, 1, (uint8_t *)&rt_buffer, 4, I2C_TIMEOUT_MS));
         if (rt_buffer[3] == IMU_GYR_CONF[2] && rt_buffer[2] == IMU_GYR_CONF[1]){
-            ESP_LOGI(TAG1,"GYR config ready!");
+            ESP_LOGI(TAG_IMU,"GYR config ready!");
         } else {
-             ESP_LOGE(TAG1,"ERROR ON GYR SET VALUE");
+             ESP_LOGE(TAG_IMU,"ERROR ON GYR SET VALUE");
             return ESP_FAIL;
         }
     } else {
-        ESP_LOGE(TAG1,"ERROR ON GYR RESET VALUE");
+        ESP_LOGE(TAG_IMU,"ERROR ON GYR RESET VALUE");
         return ESP_FAIL;
     }
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -259,7 +259,7 @@ esp_err_t imu_init(){
 }
 
 esp_err_t fuelgauge_init(){
-    ESP_LOGI(TAG2,"Initing Fuel Gauge");
+    ESP_LOGI(TAG_FG,"Initing Fuel Gauge");
     return ESP_OK;
 }
 
@@ -297,7 +297,7 @@ void sensors_task(void *arg){
     };
     CHECK(i2c_new_master_bus(&i2c_config, &bus_handle));
 
-    ESP_LOGI(TAG,"IMU handle config");
+    ESP_LOGI(TAG_MAIN,"IMU handle config");
     i2c_device_config_t imu_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = IMU_ADDRESS,
@@ -305,7 +305,7 @@ void sensors_task(void *arg){
     };
     CHECK(i2c_master_bus_add_device(bus_handle, &imu_cfg, &imu_handle));
 
-    ESP_LOGI(TAG,"FG handle config");
+    ESP_LOGI(TAG_MAIN,"FG handle config");
     i2c_device_config_t fg_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = FG_ADDRESS,
@@ -319,20 +319,20 @@ void sensors_task(void *arg){
 
     CHECK(fuelgauge_init());
 
-    ESP_LOGW(TAG, "Waiting semaphore from uROS boot");
+    ESP_LOGW(TAG_MAIN, "Waiting semaphore from uROS boot");
     xSemaphoreTake(uros_boot_sensors, portMAX_DELAY);
-    ESP_LOGI(TAG, "Resuming semaphore...");
+    ESP_LOGI(TAG_MAIN, "Resuming semaphore...");
 
-    ESP_LOGI(TAG, "Start sensors timer loop");
+    ESP_LOGI(TAG_MAIN, "Start sensors timer loop");
     sensors_timer = xTimerCreate("Sensor Timer", SENSORS_LOOP_PERIOD_MS, pdTRUE, (void *)SENSORS_LOOP_ID, &sensors_loop_cb);
     if(sensors_timer == NULL) {
-            ESP_LOGE(TAG, "Sensor Timer create Error!");
+            ESP_LOGE(TAG_MAIN, "Sensor Timer create Error!");
         } else {
-            ESP_LOGI(TAG, "Sensor Timer created!");
+            ESP_LOGI(TAG_MAIN, "Sensor Timer created!");
             if(xTimerStart(sensors_timer, portMAX_DELAY) != pdPASS) {
-                ESP_LOGE(TAG, "Sensor Timer start error!");
+                ESP_LOGE(TAG_MAIN, "Sensor Timer start error!");
             } else {
-                ESP_LOGI(TAG, "Sensor Timer started!");
+                ESP_LOGI(TAG_MAIN, "Sensor Timer started!");
             }
         }
 
