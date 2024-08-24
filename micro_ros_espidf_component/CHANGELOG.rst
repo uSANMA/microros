@@ -2,14 +2,46 @@
 Changelog for package micro_ros_espidf
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-3.0.1 (2023-06-12)
+5.0.1 (2024-06-03)
 ------------------
-* Add IDF 5 support and deprecate versions 4.1 and 4.2 (backport `#176 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/176>`_) (`#177 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/177>`_)
-* Add example_interfaces package (`#149 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/149>`_)
+* Bump jazzy (`#246 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/246>`_)
+* Add multithread to CI (`#238 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/238>`_)
+  * Add multithread to CI
+  * Fix multithread example
+  * Override esp_macros fro micro-ROS build
+  ---------
+* Update IDF versions (`#230 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/230>`_)
+  * Update IDF versions
+  * Update nightly
+  ---------
+* Forcing to use make on Unix (`#223 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/223>`_) (`#225 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/225>`_)
+  This also makes the process fail if pulling external code fails.
+  (cherry picked from commit d2249e8f34223f16cdec2e2151a5f5537842014d)
+  Co-authored-by: flabrosse <ffl@aber.ac.uk>
+* Ignore lttngpy (`#222 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/222>`_)
+* Fix empy dep (`#213 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/213>`_) (`#214 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/214>`_)
+  (cherry picked from commit dd5108214f747780ac401ab50a2b6ae97f1480fc)
+  Co-authored-by: Pablo Garrido <pablogs9@gmail.com>
+* Patch CI (`#208 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/208>`_) (`#210 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/210>`_)
+  Remove when https://github.com/colcon/colcon-python-setup-py/issues/56 is solved
+  (cherry picked from commit d0e63d9ab1d4b1b2777e68b715c5ea6d20ad68f4)
+  Co-authored-by: Pablo Garrido <pablogs9@gmail.com>
+* Remove micro-ROS fork (`#204 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/204>`_)
+* Contributors: Antonio Cuadros, Pablo Garrido, mergify[bot]
 
-3.0.0 (2022-05-25)
+5.0.0 (2023-06-12)
 ------------------
-* Initial humble release (`#147 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/147>`_)
+* Update rolling branches (`#197 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/197>`_)
+* Replace repo with micro-ROS fork (`#192 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/192>`_)
+* Fix rolling sources (`#185 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/185>`_)
+* Ignore tracetools tests (`#184 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/184>`_)
+* Update to new RCL fork (`#182 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/182>`_)
+* Add IDF 5 support and deprecate versions 4.1 and 4.2 (`#176 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/176>`_)
+* Add rosidl_core_generators (`#158 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/158>`_)
+* Add example_interfaces package (backport `#149 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/149>`_) (`#150 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/150>`_)
+
+4.0.0 (2022-05-25)
+------------------
 * Update banner (`#143 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/143>`_)
 * Fixed build when PATH contains spaces (`#140 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/140>`_)
 * Add logos (`#137 <https://github.com/micro-ROS/micro_ros_espidf_component/issues/137>`_)

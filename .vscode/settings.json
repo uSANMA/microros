@@ -1,0 +1,34 @@
+{
+    "idf.adapterTargetName": "esp32s3",
+    "idf.openOcdConfigs": [
+        "board/esp32s3-bridge.cfg"
+    ],
+    "files.associations": {
+        "i2c.h": "c",
+        "*.inc": "c",
+        "cstdint": "c",
+        "format": "c",
+        "joint_state.h": "c",
+        "compare": "c",
+        "stdint.h": "c",
+        "header__struct.h": "c",
+        "semphr.h": "c",
+        "freertos.h": "c",
+        "primitives_sequence.h": "c",
+        "vector": "c",
+        "string.h": "c",
+        "multi_array_dimension.h": "c",
+        "array": "c",
+        "bitset": "c",
+        "string_view": "c",
+        "initializer_list": "c",
+        "span": "c",
+        "regex": "c",
+        "string": "c",
+        "laser_scan.h": "c",
+        "numbers": "c",
+        "complex": "c",
+        "string_functions.h": "c",
+        "iterator": "c"
+    }
+}
