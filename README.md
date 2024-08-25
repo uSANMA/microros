@@ -43,6 +43,7 @@ Set menuconfig
 ```bash
 idf.py set-target menuconfig
 ```
+```json
 menuconfig
 ├── Serial Flasher config
 │   └── Flash size (16MB)
@@ -58,6 +59,7 @@ menuconfig
         └── FreeRTOS
             └── Kernel
                 └── (1000) configTICK_RATE_HZ
+```
 
 Build the project
 ```bash
