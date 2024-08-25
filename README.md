@@ -1,10 +1,10 @@
-# microros
+# uWABA project
 
 A directory for nerds who want to learn (or teach) about microros and their features. In the future, I will provide more details
 
 ## Usage
 
-Clone micro-ros repository:
+Clone this repository and clone micro-ros repository inside:
 
 ```bash
 git clone -b humble https://github.com/micro-ROS/micro_ros_espidf_component.git
@@ -43,23 +43,21 @@ Set menuconfig
 ```bash
 idf.py set-target menuconfig
 ```
-Serial Flasher config
-    Flash size (16MB)
-
-Partition Table
-    PartitionTable (Custom partition table CSV)
-    (partitions.csv) Custom partition CSV file
-
-micro-ROS Setting
-    WiFi Configuration
-        SSID
-        PASS
-    (xxx) micro-ROS Agent IP
-
-Component config
-    FreeRTOS
-        Kernel
-            (1000) configTICK_RATE_HZ
+menuconfig
+├── Serial Flasher config
+│   └── Flash size (16MB)
+├── Partition Table
+│   ├── PartitionTable (Custom partition table CSV)
+│   └── (partitions.csv) Custom partition CSV file
+├── micro-ROS Setting
+│       ├── WiFi Configuration
+│       │   ├── SSID
+│       │   └── PASS
+│       └── (xxx) micro-ROS Agent IP
+└── Component config
+        └── FreeRTOS
+            └── Kernel
+                └── (1000) configTICK_RATE_HZ
 
 Build the project
 ```bash
