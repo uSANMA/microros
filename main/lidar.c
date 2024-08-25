@@ -18,14 +18,14 @@
 #include "driver/gpio.h"
 #include "driver/uart.h"
 
-#define CHECKDRIVER(fn)                                                                                                         \
-	{                                                                                                                           \
-		driver_ret_t rt_driver = fn;                                                                                            \
-		if ((rt_driver != DRIVER_RET_OK))                                                                                       \
-		{                                                                                                                       \
-			ESP_LOGE("SYSTEM-LidarDriver", "Failed status on line: %d > returned: %d > Aborting", __LINE__, (int)rt_driver);     \
-            while(1);                                                                                                           \
-		}                                                                                                                       \
+#define CHECKDRIVER(fn) {                                                                                                           \
+		driver_ret_t rt_driver = fn;                                                                                                \
+		if ((rt_driver != DRIVER_RET_OK)) {                                                                                         \
+			ESP_LOGE("SYSTEM-LidarDriver", "Failed status on line: %d > returned: %d > Aborting", __LINE__, (int)rt_driver);        \
+            while(1){                                                                                                               \
+                taskYIELD();                                                                                                        \
+            }                                                                                                                       \
+		}                                                                                                                           \
 	}
 
 static const char *TAG_MAIN = "Task-Lidar";
@@ -256,6 +256,7 @@ void lidar_task(void * arg){
                             new_scan_flag = 0;
                             measures = 0;
                             timestamp_update(&msgs_laserscan);
+                            memset(&msgs_laserscan.ranges.data, 0, (size_t)msgs_laserscan.ranges.capacity);
                         } else if ((new_scan_flag == 0) && (range > 0) && (range <= msgs_laserscan.range_max) && (range >= msgs_laserscan.range_min)) {
                             //ESP_LOGI(TAG_MAIN,"Measure > Quality: %02d | Angle: %3.8f | Angle_i: %03d | Range: %2.8f", quality, angle, angle_index, range);
                             measures++;

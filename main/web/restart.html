@@ -1,0 +1,28 @@
+<html>
+
+<head>
+   <meta charset='utf-8'>
+   <meta name="viewport" content="width=device-width, initial-scale=0.9">
+   <meta name="apple-mobile-web-app-capable" content="yes">
+   <meta name="theme-color" content="#000000">
+   <link rel="icon" type="image/x-icon" href="uwaba.png">
+   <title>uWABA Restart</title>
+   <script type='text/javascript'>
+      var t = 15; function timedCount() {
+         if (t > 0) {
+            document.getElementById('txt').innerText = 'Wait restart finesh: ' + t + ' sec.';
+            setTimeout('timedCount()', 1000); t--;
+         } else document.location.href = './';
+      }
+   </script>
+</head>
+
+<body onload='timedCount()' style='display: flex;justify-content: center;align-items: center;'>
+   <div style='display: block;text-align: center;'>
+      <h2>Refresh page after restart</h2>
+      <br />
+      <h2 id='txt'></h2>
+   </div>
+</body>
+
+</html>

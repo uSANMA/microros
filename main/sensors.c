@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "esp_log.h"
 #include "esp_types.h"
 
@@ -21,14 +23,14 @@ static const char *TAG_IMU = "IMU";
 static const char *TAG_FG = "Fuel_Gauge";
 static const char *TAG_ESP32TEMP = "ESP32_SENSORS";
 
-#define CHECK(fn)                                                                                               \
-	{                                                                                                           \
-		esp_err_t temp_rc = fn;                                                                                 \
-		if ((temp_rc != ESP_OK))                                                                                \
-		{                                                                                                       \
-			ESP_LOGE("SYSTEM-SENSORS", "Failed status on line: %d > returned: %d > Aborting", __LINE__, (int)temp_rc);   \
-            while(1);                                                                                           \
-		}                                                                                                       \
+#define CHECK(fn) {                                                                                                         \
+		esp_err_t temp_rc = fn;                                                                                             \
+		if ((temp_rc != ESP_OK)) {                                                                                          \
+			ESP_LOGE("SYSTEM-SENSORS", "Failed status on line: %d > returned: %d > Aborting", __LINE__, (int)temp_rc);      \
+            while(1){                                                                                                       \
+                taskYIELD();                                                                                                \
+            }                                                                                                               \
+		}                                                                                                                   \
 	}
 
 #define SENSORS_LOOP_PERIOD_MS          30
@@ -60,11 +62,15 @@ TimerHandle_t sensors_timer;
 
 extern void sensors_pub_callback();
 
+extern void timestamp_update(void*arg);
+
 i2c_master_bus_handle_t bus_handle;
 i2c_master_dev_handle_t imu_handle;
 i2c_master_dev_handle_t fg_handle;
 
-const uint8_t FG_ADDRESS =                        0x00;
+const uint8_t FG_ADDRESS =                        0x36;
+const uint8_t FG_CHIP_ID_REG =                    0x0121; //chip_id[7-0]
+const uint16_t FG_CHIP_ID_RESET =                 0x4020;
 
 const uint8_t IMU_ADDRESS =                       0x68; //alternative 0X69 if SDO=VDD 0b 36
 const uint8_t IMU_CHIP_ID_REG =                   0x00; //chip_id[7-0]
@@ -112,8 +118,6 @@ result = IMU_GYR_CONF = 0b0111011010100111 = 0x76A7
 */
 const uint8_t IMU_GYR_CONF[3]  = {IMU_GYR_CONF_REG, 0xA7, 0x76};
 const uint16_t IMU_GYR_CONF_RESET = 0x0048;
-
-extern void timestamp_update(void*arg);
 
 extern SemaphoreHandle_t uros_boot_sensors;
 SemaphoreHandle_t timer_sensors;
@@ -215,6 +219,7 @@ esp_err_t imu_init(){
     ESP_LOGI(TAG_IMU,"Initing IMU");
     volatile uint8_t rt_buffer[4];
     CHECK(i2c_master_transmit_receive(imu_handle,  &IMU_CHIP_ID_REG, 1, (uint8_t *)&rt_buffer, 4, I2C_TIMEOUT_MS));
+    ESP_LOG_BUFFER_HEXDUMP(TAG_FG, (uint8_t*)rt_buffer, 4, ESP_LOG_INFO);
     if (rt_buffer[2] == (uint8_t)IMU_CHIP_ID_RESET){
         ESP_LOGI(TAG_IMU,"CHIP_ID match on 0x43!");
         CHECK(imu_softreset());
@@ -224,7 +229,7 @@ esp_err_t imu_init(){
     }
 
     CHECK(i2c_master_transmit_receive(imu_handle,  &IMU_ACC_CONF_REG, 1, (uint8_t *)&rt_buffer, 4, I2C_TIMEOUT_MS));
-    if (rt_buffer[3] == (uint8_t)(IMU_ACC_CONF_RESET>>8) && rt_buffer[2] == IMU_ACC_CONF_RESET){
+    if ((rt_buffer[3] == (uint8_t)(IMU_ACC_CONF_RESET>>8)) && (rt_buffer[2] == IMU_ACC_CONF_RESET)){
         CHECK(i2c_master_transmit(imu_handle, (uint8_t *)&IMU_ACC_CONF, 3, I2C_TIMEOUT_MS));
         CHECK(i2c_master_transmit_receive(imu_handle,  &IMU_ACC_CONF_REG, 1, (uint8_t *)&rt_buffer, 4, I2C_TIMEOUT_MS));
         if (rt_buffer[3] == IMU_ACC_CONF[2] && rt_buffer[2] == IMU_ACC_CONF[1]){
@@ -260,6 +265,16 @@ esp_err_t imu_init(){
 
 esp_err_t fuelgauge_init(){
     ESP_LOGI(TAG_FG,"Initing Fuel Gauge");
+    volatile uint8_t rt_buffer[4];
+    CHECK(i2c_master_transmit_receive(fg_handle,  &FG_CHIP_ID_REG, 1, (uint8_t *)&rt_buffer, 4, I2C_TIMEOUT_MS));
+    ESP_LOG_BUFFER_HEXDUMP(TAG_FG, (uint8_t*)rt_buffer, 4, ESP_LOG_INFO);
+    if (rt_buffer[2] == (uint8_t)FG_CHIP_ID_RESET){
+        ESP_LOGI(TAG_FG,"CHIP_ID match on 0x40!");
+        CHECK(imu_softreset());
+    } else {
+        ESP_LOGE(TAG_FG,"ERROR ON CHIP_ID");
+        return ESP_FAIL;
+    }
     return ESP_OK;
 }
 

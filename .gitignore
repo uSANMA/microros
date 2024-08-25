@@ -1,2 +1,5 @@
-build
-debug
+build/
+debug/
+sdkconfig
+sdkconfig.old
+micro_ros_espidf_component/

@@ -34,14 +34,14 @@
 
 #define PING_AGENT  1
 
-#define CHECK(fn)                                                                                           \
-	{                                                                                                       \
-		rcl_ret_t temp_rc = fn;                                                                             \
-		if ((temp_rc != RCL_RET_OK))                                                                        \
-		{                                                                                                   \
-			ESP_LOGE("SYSTEM-uROS", "Failed status on line: %d > returned: %d > Aborting", __LINE__, (int)temp_rc);  \
-            while(1);                                                                                       \
-		}                                                                                                   \
+#define CHECK(fn) {                                                                                                         \
+		rcl_ret_t temp_rc = fn;                                                                                             \
+		if ((temp_rc != RCL_RET_OK)) {                                                                                      \
+			ESP_LOGE("SYSTEM-uROS", "Failed status on line: %d > returned: %d > Aborting", __LINE__, (int)temp_rc);         \
+            while(1){                                                                                                       \
+                taskYIELD();                                                                                                \
+            }                                                                                                               \
+		}                                                                                                                   \
 	}
 
 static const char *TAG_MAIN = "Task-uROS";

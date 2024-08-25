@@ -27,6 +27,7 @@ extern void uros_task(void *);
 extern void sensors_task(void *);
 extern void motorscontrol_task(void *);
 extern void lidar_task(void *);
+extern void ota_task(void *argument);
 
 #define MAC_BASE_CUSTOM 0
 
@@ -204,9 +205,10 @@ void app_main(void) {
     xSemaphoreTake(got_time_semaphore, portMAX_DELAY);
 
     ESP_LOGI(TAG_MAIN, "Creating xTasks");
-    xTaskCreate(uros_task, "uROS Task", 1024*6, NULL, 5, NULL);
-    xTaskCreate(sensors_task, "Sensors Task", 1024*4, NULL, 4, NULL);
-    xTaskCreate(motorscontrol_task, "Motor Control Task", 1024*4, NULL, 4, NULL);
-    xTaskCreate(lidar_task, "Lidar Task", 1024*4, NULL, 4, NULL);
+    //xTaskCreate(uros_task, "uROS Task", 1024*6, NULL, 5, NULL);
+    //xTaskCreate(sensors_task, "Sensors Task", 1024*4, NULL, 4, NULL);
+    //xTaskCreate(motorscontrol_task, "Motor Control Task", 1024*4, NULL, 4, NULL);
+    //xTaskCreate(lidar_task, "Lidar Task", 1024*4, NULL, 4, NULL);
+    xTaskCreate(ota_task, "OTA Task", 1024*8, NULL, 3, NULL);
 
 }

@@ -8,7 +8,8 @@
         },
         "rcl":{
             "cmake-args":[
-                "-DRCL_MICROROS=ON"
+                "-DRCL_COMMAND_LINE_ENABLED=OFF",
+                "-DRCL_LOGGING_ENABLED=OFF"
             ]
         },
         "rcutils": {
@@ -48,8 +49,8 @@
         },
         "embeddedrtps": {
             "cmake-args": [
-                "-DERTPS_MAX_PUBLISHERS=5",
-                "-DERTPS_MAX_SUBSCRIPTIONS=1",
+                "-DERTPS_MAX_PUBLISHERS=2",
+                "-DERTPS_MAX_SUBSCRIPTIONS=2",
                 "-DERTPS_MAX_SERVICES=1",
                 "-DERTPS_MAX_CLIENTS=1",
                 "-DERTPS_MAX_HISTORY=10"
