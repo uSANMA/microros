@@ -1,5 +1,5 @@
 build/
 debug/
-micro_ros_espidf_component/
 sdkconfig
 sdkconfig.old
+micro_ros_espidf_component/
