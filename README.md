@@ -7,6 +7,10 @@ A directory for nerds who want to learn (or teach) about microros and their feat
 Clone this repository and clone micro-ros repository inside:
 
 ```bash
+git clone -b beta https://github.com/uSANMA/microros-uwaba-prototype.git
+```
+
+```bash
 git clone -b humble https://github.com/micro-ROS/micro_ros_espidf_component.git
 ```
 
@@ -56,10 +60,15 @@ menuconfig
 │       │   └── PASS
 │       └── (xxx) micro-ROS Agent IP
 └── Component config
-        └── FreeRTOS
-            └── Kernel
-                └── (1000) configTICK_RATE_HZ
+        ├── FreeRTOS
+        │   └── Kernel
+        │       └── (1000) configTICK_RATE_HZ
+        └── HTTP Server
+            └── [*] WebSocket server support
 ```
+
+Wi-Fi
+    WiFi EXTRA IRAM speed optimization
 
 Build the project
 ```bash

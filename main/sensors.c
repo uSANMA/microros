@@ -27,6 +27,7 @@ static const char *TAG_ESP32TEMP = "ESP32_SENSORS";
 		esp_err_t temp_rc = fn;                                                                                             \
 		if ((temp_rc != ESP_OK)) {                                                                                          \
 			ESP_LOGE("SYSTEM-SENSORS", "Failed status on line: %d > returned: %d > Aborting", __LINE__, (int)temp_rc);      \
+            sensors_status = -1;                                                                                            \
             while(1){                                                                                                       \
                 taskYIELD();                                                                                                \
             }                                                                                                               \
@@ -58,6 +59,8 @@ esp_err_t temp_init();
 static float lsb_to_dps(int16_t val, float dps);
 static float lsb_to_mps(int16_t val, int8_t g_range);
 
+extern volatile int8_t sensors_status;
+
 TimerHandle_t sensors_timer;
 
 extern void sensors_pub_callback();
@@ -69,7 +72,7 @@ i2c_master_dev_handle_t imu_handle;
 i2c_master_dev_handle_t fg_handle;
 
 const uint8_t FG_ADDRESS =                        0x36;
-const uint8_t FG_CHIP_ID_REG =                    0x0121; //chip_id[7-0]
+const uint8_t FG_CHIP_ID_REG =                    0x01; //chip_id[7-0]
 const uint16_t FG_CHIP_ID_RESET =                 0x4020;
 
 const uint8_t IMU_ADDRESS =                       0x68; //alternative 0X69 if SDO=VDD 0b 36
@@ -298,6 +301,8 @@ static float lsb_to_mps(int16_t val, int8_t g_range)
 
 void sensors_task(void *arg){
 
+    sensors_status = 0;
+
     timer_sensors = xSemaphoreCreateBinary();
 
     CHECK(temp_init());
@@ -308,7 +313,6 @@ void sensors_task(void *arg){
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = 0,
         .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = false,
     };
     CHECK(i2c_new_master_bus(&i2c_config, &bus_handle));
 
@@ -328,11 +332,13 @@ void sensors_task(void *arg){
     };
     CHECK(i2c_master_bus_add_device(bus_handle, &fg_cfg, &fg_handle));
 
+    sensors_status = 2;
+
     CHECK(imu_init());
 
     CHECK(imu_read());
 
-    CHECK(fuelgauge_init());
+    //CHECK(fuelgauge_init());
 
     ESP_LOGW(TAG_MAIN, "Waiting semaphore from uROS boot");
     xSemaphoreTake(uros_boot_sensors, portMAX_DELAY);
@@ -350,6 +356,8 @@ void sensors_task(void *arg){
                 ESP_LOGI(TAG_MAIN, "Sensor Timer started!");
             }
         }
+
+    sensors_status = 1;
 
     while(1){
         xSemaphoreTake(timer_sensors, portMAX_DELAY);

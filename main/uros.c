@@ -38,6 +38,7 @@
 		rcl_ret_t temp_rc = fn;                                                                                             \
 		if ((temp_rc != RCL_RET_OK)) {                                                                                      \
 			ESP_LOGE("SYSTEM-uROS", "Failed status on line: %d > returned: %d > Aborting", __LINE__, (int)temp_rc);         \
+            uros_status = -1;                                                                                               \
             while(1){                                                                                                       \
                 taskYIELD();                                                                                                \
             }                                                                                                               \
@@ -56,9 +57,11 @@ void init_msgs_imu();
 void init_msgs_temperature();
 void init_msgs_batterypack();
 void init_msgs_laserscan();
-void ping_agent();
+rcl_ret_t ping_agent();
 
 extern void timestamp_update(void*arg);
+
+extern volatile int8_t uros_status;
 
 SemaphoreHandle_t uros_boot_lidar;
 SemaphoreHandle_t uros_boot_sensors;
@@ -381,36 +384,43 @@ rcl_ret_t init_ping_struct(){
     return rc0;
 }
 
-void ping_agent(){
+rcl_ret_t ping_agent(){
     ESP_LOGW(TAG_MAIN,"Searching agent...");
     rcl_ret_t rc = init_ping_struct();
 
     if (RMW_RET_OK == rc) { //timeout_ms, attempts
         ESP_LOGI(TAG_MAIN,"Agent found!");
+        return RMW_RET_OK;
     } else {
         int uros_agent_attempts = 0;
-        ESP_LOGE(TAG_MAIN,"Error on searching for agent");
+        ESP_LOGW(TAG_MAIN,"Error on searching for agent");
         while (RMW_RET_OK != rc) {
             ESP_LOGW(TAG_MAIN,"Trying again: %d", uros_agent_attempts);
             rc = init_ping_struct();
             uros_agent_attempts++;
-            if (uros_agent_attempts >= 300){esp_restart();}
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            if (uros_agent_attempts >= 3000){
+                ESP_LOGE(TAG_MAIN,"Impossible to find agent! > Aborting");
+                return RMW_RET_ERROR;
+            }
+            vTaskDelay(pdMS_TO_TICKS(2000));
+            taskYIELD();
         }
 
         rc = init_ping_struct();
         if (RMW_RET_OK == rc) { //timeout_ms, attempts
             ESP_LOGI(TAG_MAIN,"Connection with agent established!");
             ESP_LOGI(TAG_MAIN,"Resuming...");
+            return RMW_RET_OK;
         } else {
-            ESP_LOGE(TAG_MAIN,"Impossible to find agent");
-            ESP_LOGE(TAG_MAIN,"Unstable connection! > Aborting");
-            esp_restart();
+            ESP_LOGE(TAG_MAIN,"Unstable connection with agent! > Aborting");
+            return RMW_RET_ERROR;
         }
     }
 }
 
 void uros_task(void * arg) {
+
+    uros_status = 0;
 
     uros_boot_sensors = xSemaphoreCreateBinary();
     uros_boot_motorcontrol = xSemaphoreCreateBinary();
@@ -435,11 +445,15 @@ void uros_task(void * arg) {
 
     CHECK(rmw_uros_options_set_udp_address(CONFIG_MICRO_ROS_AGENT_IP, CONFIG_MICRO_ROS_AGENT_PORT, rmw_options));
 
+    uros_status = 2;
+
 #if (PING_AGENT == 1)
-    ping_agent();
+    CHECK(ping_agent());
 #endif
 
     CHECK(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
+
+    uros_status = 3;
 
     init_msgs_encoders();
     init_msgs_imu();
@@ -512,9 +526,11 @@ void uros_task(void * arg) {
     xSemaphoreGive(uros_boot_sensors);
     xSemaphoreGive(uros_boot_lidar);
 
+    uros_status = 1;
+
     while(1){
-        CHECK(rclc_executor_spin_some(&executor_sub_msgs, RCL_MS_TO_NS(35)));
-        CHECK(rclc_executor_spin_some(&executor_pub_msgs, RCL_MS_TO_NS(35)));
+        CHECK(rclc_executor_spin_some(&executor_sub_msgs, RCL_MS_TO_NS(50)));
+        CHECK(rclc_executor_spin_some(&executor_pub_msgs, RCL_MS_TO_NS(50)));
         //ESP_LOGI(TAG_MAIN,"Executor spin");
         taskYIELD();
     }

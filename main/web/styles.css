@@ -8,22 +8,27 @@ font-size: 16px;
 justify-content: center;
 scroll-behavior: smooth;
 }
+
 body {
 display: flex;
 flex-direction: column;
 scroll-behavior: smooth;
 }
+
 ::-ms-reveal {
 display: none;
 }
+
 input:disabled {
 background-color: #EEE !important;
 }
+
 input[type=number]::-webkit-inner-spin-button, 
 input[type=number]::-webkit-outer-spin-button { 
 padding: 15px 3px;
 margin: 0;
 }
+
 input[type='datetime-local'],input[type=number] {
 border-color: var(--input-border-color);
 border-style: solid;
@@ -32,37 +37,71 @@ border-radius: 2px;
 padding: 3.2px 2px 3.2px 10px;
 height: 32.4px;
 }
+
 ::-webkit-calendar-picker-indicator {
 padding: 0;
 margin: 0;
 }
+
 ::-webkit-calendar-picker-indicator,
 input[type='checkbox']:hover,
+
+.status-container {
+    display: center;
+    flex-direction: column; /* Alinha os itens verticalmente */
+    align-items: flex-start; /* Centraliza horizontalmente os itens no contêiner */
+    margin-top: 20px; /* Espaço superior, se necessário */
+ }
+ 
+ .status-item {
+    display: flex;
+    align-items: center; /* Alinha verticalmente o texto e o indicador */
+    margin-bottom: 10px; /* Espaço entre os pares de status */
+    width: 100%;
+ }
+ 
+ .status-item span {
+    margin-right: 10px;
+ }
+
+ .status-indicator {
+    width: 25px;
+    height: 25px;
+    border-radius: 50%;
+    background-color: gray;
+ }
+ 
 .check-send {
 cursor: pointer !important;
 }
+
 .t-r {
 text-align: right
 }
+
 .text-center {
 text-align: center;
 }
+
 .block {
 width: 100%;
 padding-left: 0 !important;
 padding-right: 0 !important;
 margin: 5px 0 !important;
 }
+
 .fill {
 width: 100%;
 margin: 5px 0
 }
+
 .space {
-height: 20px;
+height: 10px;
 width: 100%;
 }
+
 .space2 {
-height: 60px;
+height: 30px;
 width: 100%;
 }
 
@@ -72,32 +111,40 @@ width: 100%;
 background-color: #000;
 margin: 20px 0;
 }
+
 .bold {
 font-weight: bold;
 }
+
 .s-p {
 padding: 0 !important;
 }
+
 .s-m {
 margin: 0 !important;
 }
+
 .m-tb {
 margin: 8px 0 !important;
 }
+
 .card {
 border-style: solid;
 border-width: 1px;
 border-radius: 7px;
 }
+
 mark {
 color: #fff;
 background-color: #000;
 border-color: #000;
 }
+
 .border {
 border-width: 1px;
 border-style: solid;
 }
+
 .list {
 border-style: solid;
 border-width: 1px;
@@ -106,19 +153,24 @@ border-radius: 3px;
 height: 35px !important;
 padding: 0;
 }
+
 .list:hover {
 cursor: pointer;
 border-color: var(--input-focus-color)
 }
+
 .rssi {
 align-items: end
 }
+
 .overflow-h {
 overflow: hidden;
 }
+
 .rotate180 {
 transform: rotate(180deg) scaleX(-1);
 }
+
 .block,.fill {border-radius: 0.2rem/0.2rem !important;}
 
 .fab, .fab:active  {
@@ -137,6 +189,7 @@ width: 50px;
 height: 50px;
 background-color: rgba(0,0,0,.3);
 }
+
 .fab_back {
 top: 15px;
 margin-top: 10px;
@@ -149,6 +202,7 @@ position: fixed;
 bottom: 10px;
 border-radius: 50%;
 }
+
 .fab_top::after {
 content: '↑';
 font-size: 1em;
@@ -167,6 +221,7 @@ transition: all 0.3s ;
 background-color: rgba(0,0,0,1);
 transition: all 0.3s ;
 }
+
 .fab:hover::after {
 margin-top:-8px;
 } 

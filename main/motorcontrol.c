@@ -49,6 +49,8 @@ char orientation_motorb = 'F';
 
 uint8_t orientation_loop = 0;
 
+extern volatile int8_t motorcontrol_status;
+
 const float wheels_separation = 0.13607;
 const float reduction_ratio = 18.8;
 const float wheels_separation2 = 9.4;
@@ -89,6 +91,8 @@ void motorcontrol_loop_cb(TimerHandle_t xTimer) {
 }
 
 void motorscontrol_task(void *arg){
+
+    motorcontrol_status = 0;
 
     timer_motorcontrol = xSemaphoreCreateBinary();
 
@@ -228,6 +232,8 @@ void motorscontrol_task(void *arg){
     motor_ctrl_ctx_a.pid_ctrl = pid_ctrl_a;
     motor_ctrl_ctx_b.pid_ctrl = pid_ctrl_b;
 
+    motorcontrol_status = 2;
+
     ESP_LOGW(TAG_MAIN, "Waiting semaphore from uROS boot");
     xSemaphoreTake(uros_boot_motorcontrol, portMAX_DELAY);
     ESP_LOGI(TAG_MAIN, "Resuming semaphore...");
@@ -257,6 +263,7 @@ void motorscontrol_task(void *arg){
             }
         }
 
+    motorcontrol_status = 1;
 
     while(1){
         xSemaphoreTake(timer_motorcontrol, portMAX_DELAY);

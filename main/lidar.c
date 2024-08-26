@@ -22,6 +22,7 @@
 		driver_ret_t rt_driver = fn;                                                                                                \
 		if ((rt_driver != DRIVER_RET_OK)) {                                                                                         \
 			ESP_LOGE("SYSTEM-LidarDriver", "Failed status on line: %d > returned: %d > Aborting", __LINE__, (int)rt_driver);        \
+            lidar_status = -1;                                                                                                       \
             while(1){                                                                                                               \
                 taskYIELD();                                                                                                        \
             }                                                                                                                       \
@@ -35,6 +36,8 @@ const int lidar_init_ms_timeout = 500;
 const int uart_buffer_size = 1024;
 const int uart_queue_size = 256;
 QueueHandle_t uart_queue;
+
+extern volatile int8_t lidar_status;
 
 typedef int8_t driver_ret_t;
 #define DRIVER_RET_ERROR -1
@@ -200,6 +203,8 @@ void stop_scan_lidar(){
 
 void lidar_task(void * arg){
 
+    lidar_status = 0;
+
     uart_config_t uart_config = {
         .baud_rate = UART_BAUD_RATE,
         .data_bits = UART_DATA_8_BITS,
@@ -222,13 +227,17 @@ void lidar_task(void * arg){
     uart_set_always_rx_timeout(UART_PORT_NUM, true);
     uart_flush(UART_PORT_NUM);
 
+    lidar_status = 2;
+    
+    init_lidar();
+
     ESP_LOGW(TAG_MAIN, "Waiting for semaphore from uROS boot");
     xSemaphoreTake(uros_boot_lidar, portMAX_DELAY);
     ESP_LOGI(TAG_MAIN, "Resuming semaphore...");
 
-    init_lidar();
-
     CHECKDRIVER(start_scan_lidar());
+
+    lidar_status = 1;
 
     uint16_t measures = 0;
     uint8_t *data_scan = (uint8_t *) malloc(10);
@@ -256,7 +265,7 @@ void lidar_task(void * arg){
                             new_scan_flag = 0;
                             measures = 0;
                             timestamp_update(&msgs_laserscan);
-                            memset(&msgs_laserscan.ranges.data, 0, (size_t)msgs_laserscan.ranges.capacity);
+                            memset(msgs_laserscan.ranges.data, 0, sizeof(msgs_laserscan.ranges.data));
                         } else if ((new_scan_flag == 0) && (range > 0) && (range <= msgs_laserscan.range_max) && (range >= msgs_laserscan.range_min)) {
                             //ESP_LOGI(TAG_MAIN,"Measure > Quality: %02d | Angle: %3.8f | Angle_i: %03d | Range: %2.8f", quality, angle, angle_index, range);
                             measures++;
@@ -267,6 +276,7 @@ void lidar_task(void * arg){
                 taskYIELD();
             }
         }
+        taskYIELD();
     }
     ESP_LOGE(TAG_MAIN, "Task Delete");
     vTaskDelete(NULL);

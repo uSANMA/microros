@@ -1,5 +1,6 @@
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 
 #include "esp_timer.h"
 #include "esp_log.h"
@@ -20,7 +21,7 @@ static const char *TAG_MAIN = "Task-HTTP";
 
 void ota_task(void *argument);
 static void init_server(void);
-static esp_err_t http_handle_login(httpd_req_t *req);
+static esp_err_t http_handle(httpd_req_t *req);
 static esp_err_t http_handle_ota(httpd_req_t *req);
 static void ota_request();
 static void restart_request();
@@ -50,6 +51,12 @@ extern const uint8_t file_menu_html_end[] asm("_binary_menu_html_end");
 volatile int8_t ota_rt = 0;
 volatile int8_t restart_rt = 0;
 
+volatile int8_t main_status;
+volatile int8_t uros_status;
+volatile int8_t lidar_status;
+volatile int8_t sensors_status;
+volatile int8_t motorcontrol_status;
+
 httpd_handle_t server_handle = NULL;
 typedef void (*function_t)(void);
 
@@ -62,10 +69,10 @@ typedef struct file_handle {
    function_t function;
 } file_handle_t;
 
-static httpd_uri_t http_uri_login = {
+static httpd_uri_t http_uri = {
    .uri = "/*",
    .method = HTTP_GET,
-   .handler = http_handle_login,
+   .handler = http_handle,
    .user_ctx = NULL
 };
 
@@ -87,7 +94,7 @@ static file_handle_t file_list[] = {
    {"/uwaba.png", file_uwaba_png_start, file_uwaba_png_end, "image/x-icon", 0, NULL}
 };
 
-static esp_err_t http_handle_login(httpd_req_t *req) {
+static esp_err_t http_handle(httpd_req_t *req) {
    file_handle_t *pList = NULL;
    for (uint32_t i = 0; i < (sizeof(file_list) / sizeof(file_list[0])); i++) {
       if (strstr(req->uri, file_list[i].path) != NULL) {
@@ -115,9 +122,20 @@ static esp_err_t http_handle_login(httpd_req_t *req) {
       httpd_resp_send_chunk(req, NULL, 0);
       return ESP_OK;
    } else if (strstr(req->uri, "/ota_status.json") != NULL) {
-      char saida[100];
-      sprintf(saida, "{\"status\":%d,\"compile_time\":\"%s\",\"compile_date\":\"%s\"}", ota_rt, __TIME__, __DATE__);
-      httpd_resp_sendstr(req, saida);
+      ESP_LOGI(TAG_MAIN, "Sending OTA status");
+      char ota_status[100];
+      sprintf(ota_status, "{\"status\":%d,\"compile_time\":\"%s\",\"compile_date\":\"%s\"}", ota_rt, __TIME__, __DATE__);
+      httpd_resp_sendstr(req, ota_status);
+      return ESP_OK;
+   } else if (strstr(req->uri, "/uwaba_status.json") != NULL){
+      if (main_status == 1 && uros_status == 1 && lidar_status == 1 && sensors_status == 1 && motorcontrol_status == 1) {
+         ESP_LOGI(TAG_MAIN, "Sending uWABA status");
+      }
+      struct timespec timestamp_raw;
+      char log[128];
+      clock_gettime(CLOCK_REALTIME, &timestamp_raw);
+      sprintf(log, "{\"timestamp\":%ld, \"main_status\":%d,\"uros_status\":%d,\"lidar_status\":%d,\"sensors_status\":%d,\"motorcontrol_status\":%d}", timestamp_raw.tv_nsec, main_status, uros_status, lidar_status, sensors_status, motorcontrol_status);
+      httpd_resp_sendstr(req, log);
       return ESP_OK;
    }
 
@@ -203,7 +221,7 @@ static void init_server(void) {
    
    if (err == ESP_OK) {
       ESP_ERROR_CHECK(httpd_register_uri_handler(server_handle, &http_uri_ota));
-      ESP_ERROR_CHECK(httpd_register_uri_handler(server_handle, &http_uri_login));
+      ESP_ERROR_CHECK(httpd_register_uri_handler(server_handle, &http_uri));
    } else {
     ESP_LOGE(TAG_MAIN, "Erro on http");
    }
@@ -232,8 +250,8 @@ void ota_task(void * arg){
 
    while(1){
       if (restart_rt) {
-         vTaskDelay(pdMS_TO_TICKS(5000));
-         restart_rt = 0;
+         ESP_LOGW(TAG_MAIN, "HTTP restart request!");
+         vTaskDelay(pdMS_TO_TICKS(1000));
          httpd_stop(server_handle);
          esp_wifi_stop();
          esp_restart();

@@ -29,6 +29,10 @@
         "numbers": "c",
         "complex": "c",
         "string_functions.h": "c",
-        "iterator": "c"
+        "iterator": "c",
+        "esp_ota_ops.h": "c",
+        "cmath": "c",
+        "nvs_flash.h": "c",
+        "cstring": "c"
     }
 }

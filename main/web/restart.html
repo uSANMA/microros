@@ -6,9 +6,11 @@
    <meta name="apple-mobile-web-app-capable" content="yes">
    <meta name="theme-color" content="#000000">
    <link rel="icon" type="image/x-icon" href="uwaba.png">
+   <link rel="stylesheet" href="mini.css">
+   <link rel="stylesheet" href="./styles.css">
    <title>uWABA Restart</title>
    <script type='text/javascript'>
-      var t = 15; function timedCount() {
+      var t = 10; function timedCount() {
          if (t > 0) {
             document.getElementById('txt').innerText = 'Wait restart finesh: ' + t + ' sec.';
             setTimeout('timedCount()', 1000); t--;
@@ -19,7 +21,7 @@
 
 <body onload='timedCount()' style='display: flex;justify-content: center;align-items: center;'>
    <div style='display: block;text-align: center;'>
-      <h2>Refresh page after restart</h2>
+      <h2>Refreshing this page after restart...</h2>
       <br />
       <h2 id='txt'></h2>
    </div>

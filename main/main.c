@@ -34,6 +34,8 @@ extern void ota_task(void *argument);
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
+extern volatile int8_t main_status;
+
 static EventGroupHandle_t s_wifi_event_group;
 
 SemaphoreHandle_t got_time_semaphore;
@@ -127,11 +129,9 @@ void wifi_init_sta(void) {
             portMAX_DELAY);
 
     if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG_NET, "Connected in SSID: %s",
-                 CONFIG_ESP_WIFI_SSID);
+        ESP_LOGI(TAG_NET, "Connected in SSID: %s", CONFIG_ESP_WIFI_SSID);
     } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGW(TAG_NET, "Connection fail: %s",
-                 CONFIG_ESP_WIFI_PASSWORD);
+        ESP_LOGW(TAG_NET, "Connection fail: %s", CONFIG_ESP_WIFI_PASSWORD);
     } else {
         ESP_LOGE(TAG_NET, "Error on Wi-fi connection!");
         vTaskDelay(pdMS_TO_TICKS(5000));
@@ -176,6 +176,7 @@ void timestamp_update(void *arg){
 void app_main(void) {
     vTaskDelay(pdMS_TO_TICKS(1000));
     ESP_LOGI(TAG_MAIN, "--------------- MCU begin ---------------");
+    main_status = 0;
 
     got_time_semaphore = xSemaphoreCreateBinary();
 
@@ -203,12 +204,13 @@ void app_main(void) {
 
     ESP_LOGI(TAG_MAIN, "Waiting for sync real time");
     xSemaphoreTake(got_time_semaphore, portMAX_DELAY);
+    main_status = 1;
 
     ESP_LOGI(TAG_MAIN, "Creating xTasks");
-    //xTaskCreate(uros_task, "uROS Task", 1024*6, NULL, 5, NULL);
-    //xTaskCreate(sensors_task, "Sensors Task", 1024*4, NULL, 4, NULL);
-    //xTaskCreate(motorscontrol_task, "Motor Control Task", 1024*4, NULL, 4, NULL);
-    //xTaskCreate(lidar_task, "Lidar Task", 1024*4, NULL, 4, NULL);
     xTaskCreate(ota_task, "OTA Task", 1024*8, NULL, 3, NULL);
+    xTaskCreate(uros_task, "uROS Task", 1024*6, NULL, 5, NULL);
+    xTaskCreate(sensors_task, "Sensors Task", 1024*4, NULL, 4, NULL);
+    xTaskCreate(motorscontrol_task, "Motor Control Task", 1024*4, NULL, 4, NULL);
+    xTaskCreate(lidar_task, "Lidar Task", 1024*4, NULL, 4, NULL);
 
 }
