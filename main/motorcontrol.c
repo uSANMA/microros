@@ -16,45 +16,47 @@
 #include "bdc_motor.h"
 #include "pid_ctrl.h"
 
+#define MCPWM_TIMER_RESOLUTION_HZ                               10000000 // 10MHz, 1 tick = 0.1us
+#define MCPWM_FREQ_HZ                                           16000    // 16KHz PWM
+#define MCPWM_DUTY_TICK_MAX                                     (MCPWM_TIMER_RESOLUTION_HZ / MCPWM_FREQ_HZ) - 20 // maximum value we can set for the duty cycle, in ticks
+#define PID_LOOP_PERIOD_MS_esp                                  31250 //us 0.03125s = 31.25ms = 31250us
+#define PID_LOOP_PERIOD_MS                                      30 //us 0.03125s = 31.25ms = 31250us
+#define PID_LOOP_ID                                             0
+
+#define MCPWM_GPIO_A1                                           3 //forward in2 H brigde
+#define MCPWM_GPIO_A2                                           10 //reverse in1 H bridge
+#define ENCODER_GPIO_A1                                         17 //C2 motor A
+#define ENCODER_GPIO_A2                                         18 //C1 motor A
+#define ENCODER_PCNT_HIGH_LIMIT_A                               600
+#define ENCODER_PCNT_LOW_LIMIT_A                                -600
+
+#define MCPWM_GPIO_B1                                           11 //forward in1 H brigde
+#define MCPWM_GPIO_B2                                           12 //reverse in2 H bridge
+#define ENCODER_GPIO_B1                                         8 //C1 motor A
+#define ENCODER_GPIO_B2                                         13 //C2 motor A
+#define ENCODER_PCNT_HIGH_LIMIT_B                               600
+#define ENCODER_PCNT_LOW_LIMIT_B                                -600
+
+void motorscontrol_task(void *argument);
+static void motorcontrol_loop_cb(TimerHandle_t);
+
+extern void motorcontrol_pub_callback();
+extern void timestamp_update(void*arg);
+
 static const char *TAG_MAIN = "Task-MotorControl";
 
-//CT voltage = MotorCurrent * 0.155
+static float PID_EXPECT_SPEED_A = 0;  // expected motor speed, in the pulses counted by the rotary encoder
+static char orientation_motora = 'F';
 
-#define MCPWM_TIMER_RESOLUTION_HZ   10000000 // 10MHz, 1 tick = 0.1us
-#define MCPWM_FREQ_HZ               16000    // 16KHz PWM
-#define MCPWM_DUTY_TICK_MAX         (MCPWM_TIMER_RESOLUTION_HZ / MCPWM_FREQ_HZ) - 20 // maximum value we can set for the duty cycle, in ticks
-#define PID_LOOP_PERIOD_MS_esp      31250 //us 0.03125s = 31.25ms = 31250us
-#define PID_LOOP_PERIOD_MS          30 //us 0.03125s = 31.25ms = 31250us
-#define PID_LOOP_ID                 0
+static float PID_EXPECT_SPEED_B = 0;  // expected motor speed, in the pulses counted by the rotary encoder
+static char orientation_motorb = 'F';
 
-#define MCPWM_GPIO_A1               3 //forward in2 H brigde
-#define MCPWM_GPIO_A2               10 //reverse in1 H bridge
-#define ENCODER_GPIO_A1             17 //C2 motor A
-#define ENCODER_GPIO_A2             18 //C1 motor A
-#define ENCODER_PCNT_HIGH_LIMIT_A   600
-#define ENCODER_PCNT_LOW_LIMIT_A    -600
-float PID_EXPECT_SPEED_A = 0;  // expected motor speed, in the pulses counted by the rotary encoder
-float PID_EXPECT_MAXSPEED_A = 200;
-char orientation_motora = 'F';
-
-#define MCPWM_GPIO_B1               11 //forward in1 H brigde
-#define MCPWM_GPIO_B2               12 //reverse in2 H bridge
-#define ENCODER_GPIO_B1             8 //C1 motor A
-#define ENCODER_GPIO_B2             13 //C2 motor A
-#define ENCODER_PCNT_HIGH_LIMIT_B   600
-#define ENCODER_PCNT_LOW_LIMIT_B    -600
-float PID_EXPECT_SPEED_B = 0;  // expected motor speed, in the pulses counted by the rotary encoder
-float PID_EXPECT_MAXSPEED_B = 200;
-char orientation_motorb = 'F';
-
-uint8_t orientation_loop = 0;
+static const float wheels_separation = 0.13607;
+static const float reduction_ratio = 18.8;
+static const uint8_t encoder_ticks = 10; 
 
 extern volatile int8_t motorcontrol_status;
-
-const float wheels_separation = 0.13607;
-const float reduction_ratio = 18.8;
-const float wheels_separation2 = 9.4;
-const uint8_t encoder_ticks = 10; 
+extern volatile int8_t motorcontrol_reset_semaphore;
 
 typedef struct {
     bdc_motor_handle_t motor;
@@ -71,22 +73,16 @@ motor_control_context_t motor_ctrl_ctx_b = {
     .pcnt_encoder = NULL,
 };
 
-void motorscontrol_task(void *argument);
-void motorcontrol_loop_cb(TimerHandle_t);
-
 TimerHandle_t motorcontrol_timer;
-
-extern SemaphoreHandle_t uros_boot_motorcontrol;
 SemaphoreHandle_t timer_motorcontrol;
 
+extern SemaphoreHandle_t uros_boot_motorcontrol;
 extern sensor_msgs__msg__JointState msgs_encoders;
 extern geometry_msgs__msg__TwistStamped msgs_cmdvel;
 
-extern void motorcontrol_pub_callback();
+//CT voltage = MotorCurrent * 0.155
 
-extern void timestamp_update(void*arg);
-
-void motorcontrol_loop_cb(TimerHandle_t xTimer) {
+static void motorcontrol_loop_cb(TimerHandle_t xTimer) {
     xSemaphoreGive(timer_motorcontrol);
 }
 
@@ -352,5 +348,10 @@ void motorscontrol_task(void *arg){
         timestamp_update(&msgs_encoders);
         motorcontrol_pub_callback();
         taskYIELD();
+        while(motorcontrol_reset_semaphore){
+            motorcontrol_status = 0;
+            vTaskDelay(pdMS_TO_TICKS(10000));
+            taskYIELD();
+        }
     }
 }

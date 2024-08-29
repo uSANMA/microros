@@ -32,8 +32,6 @@
 #include <micro_ros_utilities/type_utilities.h>
 #include <micro_ros_utilities/string_utilities.h>
 
-#define PING_AGENT  1
-
 #define CHECK(fn) {                                                                                                         \
 		rcl_ret_t temp_rc = fn;                                                                                             \
 		if ((temp_rc != RCL_RET_OK)) {                                                                                      \
@@ -45,219 +43,60 @@
 		}                                                                                                                   \
 	}
 
-static const char *TAG_MAIN = "Task-uROS";
+#define PING_AGENT  1
 
 void uros_task(void *argument);
 void cmdvel_sub_callback(const void *);
 void motorcontrol_pub_callback();
 void sensors_pub_callback();
 void lidar_pub_callback();
-void init_msgs_encoders();
-void init_msgs_imu();
-void init_msgs_temperature();
-void init_msgs_batterypack();
-void init_msgs_laserscan();
-rcl_ret_t ping_agent();
+static void init_msgs_encoders();
+static void init_msgs_imu();
+static void init_msgs_temperature();
+static void init_msgs_batterypack();
+static void init_msgs_laserscan();
+static rcl_ret_t init_ping_struct();
+static rcl_ret_t ping_agent();
 
 extern void timestamp_update(void*arg);
 
-extern volatile int8_t uros_status;
+static rmw_publisher_allocation_t laserscan_allocation;
+
+static rcl_allocator_t allocator;
+static rclc_support_t support;
+static rcl_init_options_t init_options;
+static rcl_node_t node;
+
+static rclc_executor_t executor_pub_msgs;
+static rclc_executor_t executor_sub_msgs;
+
+static rcl_publisher_t pub_msgs_encoders;
+static rcl_publisher_t pub_msgs_imu;
+static rcl_publisher_t pub_msgs_temperature;
+static rcl_publisher_t pub_msgs_batterypack;
+static rcl_publisher_t pub_msgs_laserscan;
+
+static rcl_subscription_t sub_msgs_cmdvel;
+
+static rosidl_runtime_c__String__Sequence msgs_encoders_name_sequence;
+sensor_msgs__msg__JointState msgs_encoders;
+sensor_msgs__msg__Imu msgs_imu;
+sensor_msgs__msg__Temperature msgs_temperature;
+sensor_msgs__msg__BatteryState msgs_batterypack;
+sensor_msgs__msg__LaserScan msgs_laserscan;
+geometry_msgs__msg__TwistStamped msgs_cmdvel;
 
 SemaphoreHandle_t uros_boot_lidar;
 SemaphoreHandle_t uros_boot_sensors;
 SemaphoreHandle_t uros_boot_motorcontrol;
 
-rcl_allocator_t allocator;
-rclc_support_t support;
-rcl_init_options_t init_options;
-rcl_node_t node;
-
-rmw_publisher_allocation_t laserscan_allocation;
-
-rclc_executor_t executor_pub_msgs;
-rclc_executor_t executor_sub_msgs;
-
-rcl_publisher_t pub_msgs_encoders;
-rcl_publisher_t pub_msgs_imu;
-rcl_publisher_t pub_msgs_temperature;
-rcl_publisher_t pub_msgs_batterypack;
-rcl_publisher_t pub_msgs_laserscan;
-
-rcl_subscription_t sub_msgs_cmdvel;
-
-rosidl_runtime_c__String__Sequence msgs_encoders_name_sequence;
-
-sensor_msgs__msg__JointState msgs_encoders;
-/*
-    std_msgs__msg__Header header;
-        builtin_interfaces__msg__Time stamp;
-            int32_t sec;
-            uint32_t nanosec;
-        rosidl_runtime_c__String frame_id;
-            char * data;
-            size_t size;
-            size_t capacity;
-
-    rosidl_runtime_c__String__Sequence name;
-        char * data;
-        size_t size;
-        size_t capacity;
-
-    rosidl_runtime_c__double__Sequence position; TYPE_NAME = double
-        TYPE_NAME * data;
-        size_t size;
-        size_t capacity;
-
-    rosidl_runtime_c__double__Sequence velocity; TYPE_NAME = double
-        TYPE_NAME * data;
-        size_t size;
-        size_t capacity;   
-
-    rosidl_runtime_c__double__Sequence effort; TYPE_NAME = double
-        TYPE_NAME * data;
-        size_t size;
-        size_t capacity;
-*/
-sensor_msgs__msg__Imu msgs_imu;
-/*
-    std_msgs__msg__Header header;
-        builtin_interfaces__msg__Time stamp;
-            int32_t sec;
-            uint32_t nanosec;
-        rosidl_runtime_c__String frame_id;
-            char * data;
-            size_t size;
-            size_t capacity;
-
-    geometry_msgs__msg__Quaternion orientation;
-        double x;
-        double y;
-        double z;
-        double w;
-    double orientation_covariance[9];
-
-    geometry_msgs__msg__Vector3 angular_velocity;
-        double x;
-        double y;
-        double z;
-    double angular_velocity_covariance[9];
-
-    geometry_msgs__msg__Vector3 linear_acceleration;
-        double x;
-        double y;
-        double z;
-    double linear_acceleration_covariance[9];
-*/
-sensor_msgs__msg__Temperature msgs_temperature;
-/*
-    std_msgs__msg__Header header;
-        builtin_interfaces__msg__Time stamp;
-            int32_t sec;
-            uint32_t nanosec;
-        rosidl_runtime_c__String frame_id;
-            char * data;
-            size_t size;
-            size_t capacity;
-
-    double temperature;
-    double variance;
-*/
-sensor_msgs__msg__BatteryState msgs_batterypack;
-/*
-    std_msgs__msg__Header header;
-        builtin_interfaces__msg__Time stamp;
-            int32_t sec;
-            uint32_t nanosec;
-        rosidl_runtime_c__String frame_id;
-            char * data;
-            size_t size;
-            size_t capacity;
-
-    float voltage;
-    float temperature;
-    float current;
-    float charge;
-    float capacity;
-    float design_capacity;
-    float percentage;
-    uint8_t power_supply_status;
-    uint8_t power_supply_health;
-    uint8_t power_supply_technology;
-    bool present;
-
-    rosidl_runtime_c__float__Sequence cell_voltage; TYPE_NAME = float
-        TYPE_NAME * data;
-        size_t size;
-        size_t capacity;    
-
-    rosidl_runtime_c__float__Sequence cell_temperature; TYPE_NAME = float
-        TYPE_NAME * data;
-        size_t size;
-        size_t capacity;
-
-    rosidl_runtime_c__String location;
-        char * data;
-        size_t size;
-        size_t capacity;
-
-    rosidl_runtime_c__String serial_number;
-        char * data;
-        size_t size;
-        size_t capacity;
-*/
-sensor_msgs__msg__LaserScan msgs_laserscan;
-/*
-    std_msgs__msg__Header header;
-        builtin_interfaces__msg__Time stamp;
-            int32_t sec;
-            uint32_t nanosec;
-        rosidl_runtime_c__String frame_id;
-            char * data;
-            size_t size;
-            size_t capacity;
-
-    float angle_min;
-    float angle_max;
-    float angle_increment;
-    float time_increment;
-    float scan_time;
-    float range_min;
-    float range_max;
-
-    rosidl_runtime_c__float__Sequence ranges; TYPE_NAME = float
-        TYPE_NAME * data;
-        size_t size;
-        size_t capacity;
-
-    rosidl_runtime_c__float__Sequence intensities; TYPE_NAME = float
-        TYPE_NAME * data;
-        size_t size;
-        size_t capacity;
-*/
-geometry_msgs__msg__TwistStamped msgs_cmdvel;
-/*
-    std_msgs__msg__Header header;
-        builtin_interfaces__msg__Time stamp;
-            int32_t sec;
-            uint32_t nanosec;
-        rosidl_runtime_c__String frame_id;
-            char * data;
-            size_t size;
-            size_t capacity;
-
-    geometry_msgs__msg__Twist twist;
-        geometry_msgs__msg__Vector3 linear;
-            double x;
-            double y;
-            double z;
-        geometry_msgs__msg__Vector3 angular;
-            double x;
-            double y;
-            double z;        
-*/
+static const char *TAG_MAIN = "Task-uROS";
 
 static const int n_handles_pub = 5; //number of handles that will be added in executor (executor_add_...)
 static const int n_handles_sub = 1; //number of handles that will be added in executor (executor_add_...)
+
+extern volatile int8_t uros_status;
+extern volatile int8_t uros_reset_semaphore;
 
 void cmdvel_sub_callback(const void *msgin) {
     geometry_msgs__msg__TwistStamped *msgs_cmdvel = (geometry_msgs__msg__TwistStamped *) msgin;
@@ -274,14 +113,13 @@ void sensors_pub_callback() {
     CHECK(rcl_publish(&pub_msgs_temperature, &msgs_temperature, NULL));
     timestamp_update(&msgs_batterypack);
     CHECK(rcl_publish(&pub_msgs_batterypack, &msgs_batterypack, NULL));
-  
 }
 
 void lidar_pub_callback() {
     CHECK(rcl_publish(&pub_msgs_laserscan, &msgs_laserscan, &laserscan_allocation));
 }
 
-void init_msgs_encoders(){
+static void init_msgs_encoders(){
     ESP_LOGI(TAG_MAIN,"Init_JointState configured");
     rosidl_runtime_c__String__Sequence__init(&msgs_encoders_name_sequence, 2);
     msgs_encoders.name = msgs_encoders_name_sequence;
@@ -311,7 +149,7 @@ void init_msgs_encoders(){
     // msgs_encoders.header.frame_id.data = "motors";
     }
 
-void init_msgs_imu(){
+static void init_msgs_imu(){
     ESP_LOGI(TAG_MAIN,"Init_Imu configured");
     msgs_imu.header.frame_id.capacity = 4;
     msgs_imu.header.frame_id.size = 3;
@@ -321,7 +159,7 @@ void init_msgs_imu(){
 
 }
 
-void init_msgs_temperature(){
+static void init_msgs_temperature(){
     ESP_LOGI(TAG_MAIN,"Init_Temperature configured");
     msgs_temperature.header.frame_id.capacity = 14;
     msgs_temperature.header.frame_id.size = 13;
@@ -331,7 +169,7 @@ void init_msgs_temperature(){
 
 }
 
-void init_msgs_batterypack(){
+static void init_msgs_batterypack(){
     ESP_LOGI(TAG_MAIN,"Init_BatteryState configured");
     msgs_batterypack.header.frame_id.capacity = 12;
     msgs_batterypack.header.frame_id.size = 11;
@@ -341,7 +179,7 @@ void init_msgs_batterypack(){
 
 }
 
-void init_msgs_laserscan(){
+static void init_msgs_laserscan(){
     //https://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/LaserScan.html
     //sensor_msgs__msg__LaserScan__init(&msgs_laserscan);
     //msgs_laserscan = sensor_msgs__msg__LaserScan__create();
@@ -374,7 +212,7 @@ void init_msgs_laserscan(){
     //msgs_laserscan->intensities.data = (float*) malloc(msgs_laserscan->intensities.capacity * sizeof(float));
 }
 
-rcl_ret_t init_ping_struct(){
+static rcl_ret_t init_ping_struct(){
     rclc_support_t ping_support;
     //CHECK(rcl_init_options_fini(&ping_init_options));
     rcl_ret_t rc0 = rclc_support_init_with_options(&ping_support, 0, NULL, &init_options, &allocator);
@@ -384,7 +222,7 @@ rcl_ret_t init_ping_struct(){
     return rc0;
 }
 
-rcl_ret_t ping_agent(){
+static rcl_ret_t ping_agent(){
     ESP_LOGW(TAG_MAIN,"Searching agent...");
     rcl_ret_t rc = init_ping_struct();
 
@@ -533,6 +371,26 @@ void uros_task(void * arg) {
         CHECK(rclc_executor_spin_some(&executor_pub_msgs, RCL_MS_TO_NS(50)));
         //ESP_LOGI(TAG_MAIN,"Executor spin");
         taskYIELD();
+        while(uros_reset_semaphore){
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            ESP_LOGI(TAG_MAIN,"Clear memory");
+            CHECK(rclc_executor_fini(&executor_sub_msgs));
+            CHECK(rclc_executor_fini(&executor_pub_msgs));
+
+	        CHECK(rcl_publisher_fini(&pub_msgs_encoders, &node));
+            CHECK(rcl_publisher_fini(&pub_msgs_imu, &node));
+            CHECK(rcl_publisher_fini(&pub_msgs_temperature, &node));
+            CHECK(rcl_publisher_fini(&pub_msgs_batterypack, &node));
+            CHECK(rcl_publisher_fini(&pub_msgs_laserscan, &node));
+
+            CHECK(rcl_subscription_fini(&sub_msgs_cmdvel, &node));
+
+	        CHECK(rcl_node_fini(&node));
+            CHECK(rclc_support_fini(&support));
+            uros_status = 0;
+            vTaskDelay(pdMS_TO_TICKS(10000));
+            taskYIELD();
+        }
     }
 
     ESP_LOGI(TAG_MAIN,"Clear memory");

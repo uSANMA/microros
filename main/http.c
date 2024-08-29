@@ -17,8 +17,6 @@
 #include "freertos/task.h"
 #include "freertos/timers.h"
 
-static const char *TAG_MAIN = "Task-HTTP";
-
 void ota_task(void *argument);
 static void init_server(void);
 static esp_err_t http_handle(httpd_req_t *req);
@@ -27,6 +25,23 @@ static void ota_request();
 static void restart_request();
 static void menu_request();
 static void login();
+typedef void (*function_t)(void);
+
+static const char *TAG_MAIN = "Task-HTTP";
+
+static volatile int8_t ota_rt = 0;
+static volatile int8_t restart_rt = 0;
+
+volatile int8_t main_status;
+volatile int8_t uros_status;
+volatile int8_t lidar_status;
+volatile int8_t sensors_status;
+volatile int8_t motorcontrol_status;
+
+volatile int8_t uros_reset_semaphore;
+volatile int8_t lidar_reset_semaphore;
+volatile int8_t sensors_reset_semaphore;
+volatile int8_t motorcontrol_reset_semaphore;
 
 extern const uint8_t file_home_html_start[] asm("_binary_home_html_start");
 extern const uint8_t file_home_html_end[] asm("_binary_home_html_end");
@@ -47,18 +62,6 @@ extern const uint8_t file_restart_html_end[] asm("_binary_restart_html_end");
 // Restart
 extern const uint8_t file_menu_html_start[] asm("_binary_menu_html_start");
 extern const uint8_t file_menu_html_end[] asm("_binary_menu_html_end");
-
-volatile int8_t ota_rt = 0;
-volatile int8_t restart_rt = 0;
-
-volatile int8_t main_status;
-volatile int8_t uros_status;
-volatile int8_t lidar_status;
-volatile int8_t sensors_status;
-volatile int8_t motorcontrol_status;
-
-httpd_handle_t server_handle = NULL;
-typedef void (*function_t)(void);
 
 typedef struct file_handle {
    const char *path;
@@ -93,6 +96,8 @@ static file_handle_t file_list[] = {
    {"/styles.css", file_styles_css_start, file_styles_css_end, "text/css", 0, NULL},
    {"/uwaba.png", file_uwaba_png_start, file_uwaba_png_end, "image/x-icon", 0, NULL}
 };
+
+static httpd_handle_t server_handle = NULL;
 
 static esp_err_t http_handle(httpd_req_t *req) {
    file_handle_t *pList = NULL;
@@ -246,12 +251,17 @@ static void login() {
 }
 
 void ota_task(void * arg){
+
    init_server();
 
    while(1){
       if (restart_rt) {
          ESP_LOGW(TAG_MAIN, "HTTP restart request!");
-         vTaskDelay(pdMS_TO_TICKS(1000));
+         lidar_reset_semaphore = 1;
+         sensors_reset_semaphore = 1;
+         motorcontrol_reset_semaphore = 1;
+         uros_reset_semaphore = 1;
+         vTaskDelay(pdMS_TO_TICKS(2000));
          httpd_stop(server_handle);
          esp_wifi_stop();
          esp_restart();

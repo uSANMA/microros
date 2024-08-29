@@ -19,9 +19,22 @@
 
 #include "esp_sntp.h"
 
+#define MAC_BASE_CUSTOM 0
+
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
+
+static EventGroupHandle_t s_wifi_event_group;
+
+SemaphoreHandle_t got_time_semaphore;
+
 static const char *TAG_NET = "NETWORK";
 static const char *TAG_MAIN = "APP_MAIN";
 static const char *TAG_NTP = "NTP";
+
+static int s_retry_num = 0;
+
+extern volatile int8_t main_status;
 
 extern void uros_task(void *);
 extern void sensors_task(void *);
@@ -29,26 +42,7 @@ extern void motorscontrol_task(void *);
 extern void lidar_task(void *);
 extern void ota_task(void *argument);
 
-#define MAC_BASE_CUSTOM 0
-
-#define WIFI_CONNECTED_BIT BIT0
-#define WIFI_FAIL_BIT      BIT1
-
-extern volatile int8_t main_status;
-
-static EventGroupHandle_t s_wifi_event_group;
-
-SemaphoreHandle_t got_time_semaphore;
-
-/*
-    __time_t tv_sec;
-     __syscall_slong_t tv_nsec;
-*/
-
-static int s_retry_num = 0;
-
-static void event_handler(void* arg, esp_event_base_t event_base,
-                                int32_t event_id, void* event_data) {
+static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
@@ -86,16 +80,8 @@ void wifi_init_sta(void) {
 
     esp_event_handler_instance_t instance_any_id;
     esp_event_handler_instance_t instance_got_ip;
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
-                                                        ESP_EVENT_ANY_ID,
-                                                        &event_handler,
-                                                        NULL,
-                                                        &instance_any_id));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                        IP_EVENT_STA_GOT_IP,
-                                                        &event_handler,
-                                                        NULL,
-                                                        &instance_got_ip));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL, &instance_any_id));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL, &instance_got_ip));
 
     wifi_config_t wifi_config = {
         .sta = {
@@ -105,9 +91,10 @@ void wifi_init_sta(void) {
             .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
         },
     };
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
-    ESP_ERROR_CHECK(esp_wifi_start() );
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
 
     unsigned char mac_base[6] = {0};
     unsigned char mac_local_base[6] = {0};
@@ -191,6 +178,7 @@ void app_main(void) {
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
     wifi_init_sta();
 
 #ifdef UCLIENT_PROFILE_UDP
@@ -204,6 +192,7 @@ void app_main(void) {
 
     ESP_LOGI(TAG_MAIN, "Waiting for sync real time");
     xSemaphoreTake(got_time_semaphore, portMAX_DELAY);
+
     main_status = 1;
 
     ESP_LOGI(TAG_MAIN, "Creating xTasks");
