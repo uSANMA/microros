@@ -18,11 +18,14 @@
 #include "driver/gpio.h"
 #include "driver/uart.h"
 
+#define GPIO_PIN_LED_RED            42 //gpio led pin 35
+#define GPIO_PIN_LED_GREEN          39 //gpio led pin 32
+
 #define CHECKDRIVER(fn) {                                                                                                           \
 		driver_ret_t rt_driver = fn;                                                                                                \
 		if ((rt_driver != DRIVER_RET_OK)) {                                                                                         \
 			ESP_LOGE("SYSTEM-LidarDriver", "Failed status on line: %d > returned: %d > Aborting", __LINE__, (int)rt_driver);        \
-            lidar_status = -1;                                                                                                       \
+            lidar_status = -1;                                                                                                      \
             while(1){                                                                                                               \
                 taskYIELD();                                                                                                        \
             }                                                                                                                       \
@@ -86,7 +89,7 @@ extern sensor_msgs__msg__LaserScan msgs_laserscan;
 extern SemaphoreHandle_t uros_boot_lidar;
 
 static void init_lidar(){
-    ESP_LOGI(TAG_MAIN,"Initing lidar driver...");
+    ESP_LOGI(TAG_MAIN,"Initializing lidar driver...");
     gpio_reset_pin(GPIO_LIDAR_PWM);
     gpio_set_direction(GPIO_LIDAR_PWM, GPIO_MODE_OUTPUT);
     gpio_set_pull_mode(GPIO_LIDAR_PWM, GPIO_PULLDOWN_ENABLE);
@@ -113,11 +116,11 @@ static driver_ret_t get_info_lidar(){
             ESP_LOGI(TAG_MAIN,"Descriptor info is good!");
             len = uart_read_bytes(UART_PORT_NUM, data_uart, 20, lidar_init_ms_timeout / portTICK_PERIOD_MS);
             if (len == 20){
-                ESP_LOGE(TAG_MAIN,"Lidar info:");
-                ESP_LOGE(TAG_MAIN,"Model: %x", data_uart[0]);
-                ESP_LOGE(TAG_MAIN,"Firmware minor: %x", data_uart[1]);
-                ESP_LOGE(TAG_MAIN,"Firmware major: %x", data_uart[2]);
-                ESP_LOGE(TAG_MAIN,"Hardware: %x", data_uart[3]);
+                ESP_LOGI(TAG_MAIN,"Lidar info:");
+                ESP_LOGI(TAG_MAIN,"Model: %x", data_uart[0]);
+                ESP_LOGI(TAG_MAIN,"Firmware minor: %x", data_uart[1]);
+                ESP_LOGI(TAG_MAIN,"Firmware major: %x", data_uart[2]);
+                ESP_LOGI(TAG_MAIN,"Hardware: %x", data_uart[3]);
                 //ESP_LOGE(TAG_MAIN,"Hardware: %x", data_uart[4]); serial [4]-[20]
             }
             return DRIVER_RET_OK;
@@ -153,9 +156,9 @@ static driver_ret_t get_health_lidar(){
             ESP_LOGI(TAG_MAIN,"Health descriptor is good!");
             len = uart_read_bytes(UART_PORT_NUM, data_uart, 3, lidar_init_ms_timeout / portTICK_PERIOD_MS);
             if (len == 3){
-                ESP_LOGE(TAG_MAIN,"Lidar health:");
-                ESP_LOGE(TAG_MAIN,"Status: %x", data_uart[0]);
-                ESP_LOGE(TAG_MAIN,"Error code: %x", (data_uart[1] | (data_uart[2] << 8)));
+                ESP_LOGI(TAG_MAIN,"Lidar health:");
+                ESP_LOGI(TAG_MAIN,"Status: %x", data_uart[0]);
+                ESP_LOGI(TAG_MAIN,"Error code: %x", (data_uart[1] | (data_uart[2] << 8)));
             }
             return DRIVER_RET_OK;
         } else {
@@ -281,7 +284,9 @@ void lidar_task(void * arg){
                             new_scan_flag = 0;
                             measures = 0;
                             timestamp_update(&msgs_laserscan);
-                            memset(msgs_laserscan.ranges.data, 0, sizeof(msgs_laserscan.ranges.data));
+                            for (uint8_t i = 0; i < (uint8_t) msgs_laserscan.ranges.capacity; i++){
+                                msgs_laserscan.ranges.data[i] = 0;
+                            }
                         } else if ((new_scan_flag == 0) && (range > 0) && (range <= msgs_laserscan.range_max) && (range >= msgs_laserscan.range_min)) {
                             //ESP_LOGI(TAG_MAIN,"Measure > Quality: %02d | Angle: %3.8f | Angle_i: %03d | Range: %2.8f", quality, angle, angle_index, range);
                             measures++;

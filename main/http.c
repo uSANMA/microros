@@ -32,11 +32,11 @@ static const char *TAG_MAIN = "Task-HTTP";
 static volatile int8_t ota_rt = 0;
 static volatile int8_t restart_rt = 0;
 
-volatile int8_t main_status;
-volatile int8_t uros_status;
-volatile int8_t lidar_status;
-volatile int8_t sensors_status;
-volatile int8_t motorcontrol_status;
+extern volatile int8_t main_status;
+extern volatile int8_t uros_status;
+extern volatile int8_t lidar_status;
+extern volatile int8_t sensors_status;
+extern volatile int8_t motorcontrol_status;
 
 volatile int8_t uros_reset_semaphore;
 volatile int8_t lidar_reset_semaphore;
@@ -212,7 +212,7 @@ static esp_err_t http_handle_ota(httpd_req_t *req) {
 }
 
 static void init_server(void) {
-   ESP_LOGI(TAG_MAIN, "Initing HTTP Server");
+   ESP_LOGI(TAG_MAIN, "Initializing HTTP Server");
    httpd_config_t server_config = HTTPD_DEFAULT_CONFIG();
 
       server_config.task_priority = 3;

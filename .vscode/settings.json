@@ -34,6 +34,8 @@
         "cmath": "c",
         "nvs_flash.h": "c",
         "cstring": "c",
-        "esp_mac.h": "c"
-    }
+        "esp_mac.h": "c",
+        "math.h": "c"
+    },
+    "ros.distro": "humble"
 }

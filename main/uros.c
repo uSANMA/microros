@@ -32,6 +32,8 @@
 #include <micro_ros_utilities/type_utilities.h>
 #include <micro_ros_utilities/string_utilities.h>
 
+#define GPIO_PIN_LED_RED            42 //gpio led pin 35
+
 #define CHECK(fn) {                                                                                                         \
 		rcl_ret_t temp_rc = fn;                                                                                             \
 		if ((temp_rc != RCL_RET_OK)) {                                                                                      \
@@ -109,10 +111,10 @@ void motorcontrol_pub_callback() {
 
 void sensors_pub_callback() {
     CHECK(rcl_publish(&pub_msgs_imu, &msgs_imu, NULL));
-    timestamp_update(&msgs_temperature);
-    CHECK(rcl_publish(&pub_msgs_temperature, &msgs_temperature, NULL));
-    timestamp_update(&msgs_batterypack);
-    CHECK(rcl_publish(&pub_msgs_batterypack, &msgs_batterypack, NULL));
+    // timestamp_update(&msgs_temperature); // TO-DO Insert at the sample acquisition
+    // CHECK(rcl_publish(&pub_msgs_temperature, &msgs_temperature, NULL));
+    // timestamp_update(&msgs_batterypack); // TO-DO Insert at the sample acquisition
+    // CHECK(rcl_publish(&pub_msgs_batterypack, &msgs_batterypack, NULL));
 }
 
 void lidar_pub_callback() {
@@ -121,31 +123,32 @@ void lidar_pub_callback() {
 
 static void init_msgs_encoders(){
     ESP_LOGI(TAG_MAIN,"Init_JointState configured");
+    msgs_encoders.header.frame_id.capacity = 7;
+    msgs_encoders.header.frame_id.size = 6;
+    msgs_encoders.header.frame_id.data = (char*) malloc(msgs_encoders.header.frame_id.capacity * sizeof(char));
+    msgs_encoders.header.frame_id = micro_ros_string_utilities_init("motors");
+    
     rosidl_runtime_c__String__Sequence__init(&msgs_encoders_name_sequence, 2);
     msgs_encoders.name = msgs_encoders_name_sequence;
     rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[0], (const char *)"Right_motor", 12);
     rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[1], (const char *)"Left_motor", 11);
     // rosidl_runtime_c__String__Sequence__fini(&msgs_encoders_name_sequence);
 
-    // msgs_encoders.position.capacity = sizeof(double) * 2;
-    // msgs_encoders.position.size = 2;
-    // msgs_encoders.position.data = (double*) malloc(msgs_encoders.position.capacity * sizeof(double));
-    // msgs_encoders.position.data[0] = 0; msgs_encoders.position.data[1] = 0;
+    msgs_encoders.position.capacity = sizeof(double) * 3;
+    msgs_encoders.position.size = 2;
+    msgs_encoders.position.data = (double*) malloc(msgs_encoders.position.capacity * sizeof(double));
+    msgs_encoders.position.data[0] = 0; msgs_encoders.position.data[1] = 0;
 
-    msgs_encoders.velocity.capacity = 2;
+    msgs_encoders.velocity.capacity = 3;
     msgs_encoders.velocity.size = 2;
     msgs_encoders.velocity.data = (double*) malloc(msgs_encoders.velocity.capacity * sizeof(double));
     msgs_encoders.velocity.data[0] = 0; msgs_encoders.velocity.data[1] = 0;
 
-    // msgs_encoders.effort.capacity = sizeof(double) * 2;
-    // msgs_encoders.effort.size = 2;
-    // msgs_encoders.effort.data = (double*) malloc(msgs_encoders.effort.capacity * sizeof(double));
-    // msgs_encoders.effort.data[0] = 0; msgs_encoders.effort.data[1] = 0;
+    msgs_encoders.effort.capacity = sizeof(double) * 3;
+    msgs_encoders.effort.size = 2;
+    msgs_encoders.effort.data = (double*) malloc(msgs_encoders.effort.capacity * sizeof(double));
+    msgs_encoders.effort.data[0] = 0; msgs_encoders.effort.data[1] = 0;
 
-    msgs_encoders.header.frame_id.capacity = 7;
-    msgs_encoders.header.frame_id.size = 6;
-    msgs_encoders.header.frame_id.data = (char*) malloc(msgs_encoders.header.frame_id.capacity * sizeof(char));
-    msgs_encoders.header.frame_id = micro_ros_string_utilities_init("motors");
     // msgs_encoders.header.frame_id.data = "motors";
     }
 
@@ -156,6 +159,12 @@ static void init_msgs_imu(){
     msgs_imu.header.frame_id.data = (char*) malloc(msgs_imu.header.frame_id.capacity * sizeof(char));
     msgs_imu.header.frame_id = micro_ros_string_utilities_init("imu");
     //msgs_imu.header.frame_id.data = "imu";
+    msgs_imu.orientation.w = 0;
+    msgs_imu.orientation.x = 0;
+    msgs_imu.orientation.y = 0;
+    msgs_imu.orientation.w = 0;
+    memset(msgs_imu.orientation_covariance, 0, sizeof(msgs_imu.orientation_covariance));
+    memset(msgs_imu.linear_acceleration_covariance, 0, sizeof(msgs_imu.linear_acceleration_covariance));
 
 }
 
@@ -201,15 +210,23 @@ static void init_msgs_laserscan(){
     msgs_laserscan.range_min = 0.12;
     msgs_laserscan.range_max = 16.0;
 
-    msgs_laserscan.ranges.capacity = 360;
-    msgs_laserscan.ranges.size = 360;
+    msgs_laserscan.ranges.capacity = 361;
+    msgs_laserscan.ranges.size = 0;
     msgs_laserscan.ranges.data = (float*) malloc(msgs_laserscan.ranges.capacity * sizeof(float));
-    //msgs_laserscan.ranges.data = (float*) malloc(msgs_laserscan.ranges.capacity * sizeof(float));
-    //(float*) calloc(msgs_laserscan.ranges.capacity, sizeof(float));
+    for (uint8_t i = 0; i < (uint8_t) msgs_laserscan.ranges.capacity; i++){
+        msgs_laserscan.ranges.data[i] = 0;
+        msgs_laserscan.ranges.size++;
+    }
 
-    //msgs_laserscan->intensities.capacity = 360;
-    //msgs_laserscan->intensities.size = 360;
-    //msgs_laserscan->intensities.data = (float*) malloc(msgs_laserscan->intensities.capacity * sizeof(float));
+
+    msgs_laserscan.intensities.capacity = 361;
+    msgs_laserscan.intensities.size = 0;
+    msgs_laserscan.intensities.data = (float*) malloc(msgs_laserscan.intensities.capacity * sizeof(float));
+    for (uint8_t i = 0; i < (uint8_t) msgs_laserscan.intensities.capacity; i++){
+        msgs_laserscan.intensities.data[i] = 0;
+        msgs_laserscan.intensities.size++;
+    }
+
 }
 
 static rcl_ret_t init_ping_struct(){
@@ -370,6 +387,13 @@ void uros_task(void * arg) {
         CHECK(rclc_executor_spin_some(&executor_sub_msgs, RCL_MS_TO_NS(50)));
         CHECK(rclc_executor_spin_some(&executor_pub_msgs, RCL_MS_TO_NS(50)));
         //ESP_LOGI(TAG_MAIN,"Executor spin");
+        timestamp_update(&msgs_laserscan);
+        timestamp_update(&msgs_encoders);
+        timestamp_update(&msgs_imu);
+        motorcontrol_pub_callback();
+        sensors_pub_callback();
+        lidar_pub_callback();
+        vTaskDelay(pdMS_TO_TICKS(32));
         taskYIELD();
         while(uros_reset_semaphore){
             vTaskDelay(pdMS_TO_TICKS(1000));

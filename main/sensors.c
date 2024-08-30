@@ -19,6 +19,8 @@
 
 #include "math.h"
 
+#define GPIO_PIN_LED_RED            42 //gpio led pin 35
+
 #define CHECK(fn) {                                                                                                         \
 		esp_err_t temp_rc = fn;                                                                                             \
 		if ((temp_rc != ESP_OK)) {                                                                                          \
@@ -120,7 +122,7 @@ extern sensor_msgs__msg__Imu msgs_imu;
 extern sensor_msgs__msg__Temperature msgs_temperature;
 
 static esp_err_t temp_init(){
-    ESP_LOGI(TAG_ESP32TEMP,"Initing internal temp sensor");
+    ESP_LOGI(TAG_ESP32TEMP,"Initializing internal temp sensor");
     temperature_sensor_handle_t temp_handle = NULL;
     temperature_sensor_config_t temp_sensor = {
         .range_min = 10,
@@ -147,6 +149,7 @@ static void sensors_loop_cb(TimerHandle_t xTimer) {
 static esp_err_t imu_read(){
     uint8_t raw_buffer[16];
     CHECK(i2c_master_transmit_receive(imu_handle,  &IMU_ACC_X_REG, 1, (uint8_t *)&raw_buffer, 16, I2C_TIMEOUT_MS));
+    timestamp_update(&msgs_imu);
     //ESP_LOG_BUFFER_HEXDUMP(TAG_MAIN, &raw_buffer, 16, ESP_LOG_INFO);
 
 
@@ -181,7 +184,7 @@ static esp_err_t imu_softreset(){
 }
 
 static esp_err_t imu_init(){
-    ESP_LOGI(TAG_IMU,"Initing IMU");
+    ESP_LOGI(TAG_IMU,"Initializing IMU");
     volatile uint8_t rt_buffer[4];
     CHECK(i2c_master_transmit_receive(imu_handle,  &IMU_CHIP_ID_REG, 1, (uint8_t *)&rt_buffer, 4, I2C_TIMEOUT_MS));
     ESP_LOG_BUFFER_HEXDUMP(TAG_FG, (uint8_t*)rt_buffer, 4, ESP_LOG_INFO);
@@ -229,7 +232,7 @@ static esp_err_t imu_init(){
 }
 
 static esp_err_t fuelgauge_init(){
-    ESP_LOGI(TAG_FG,"Initing Fuel Gauge");
+    ESP_LOGI(TAG_FG,"Initializing Fuel Gauge");
     volatile uint8_t rt_buffer[4];
     CHECK(i2c_master_transmit_receive(fg_handle,  &FG_CHIP_ID_REG, 1, (uint8_t *)&rt_buffer, 4, I2C_TIMEOUT_MS));
     ESP_LOG_BUFFER_HEXDUMP(TAG_FG, (uint8_t*)rt_buffer, 4, ESP_LOG_INFO);
@@ -324,10 +327,7 @@ void sensors_task(void *arg){
     while(1){
         xSemaphoreTake(timer_sensors, portMAX_DELAY);
 
-        timestamp_update(&msgs_imu);
         CHECK(imu_read());
-
-        timestamp_update(&msgs_temperature);
 
         sensors_pub_callback();
 

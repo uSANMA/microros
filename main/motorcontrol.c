@@ -126,14 +126,14 @@ void motorscontrol_task(void *arg){
     motor_ctrl_ctx_a.motor = motor_a;
     motor_ctrl_ctx_b.motor = motor_b;
 
-    ESP_LOGI(TAG_MAIN, "Init pcnt driver to decode A rotary signal");
+    ESP_LOGI(TAG_MAIN, "Initializing pcnt driver to decode A rotary signal");
     pcnt_unit_config_t unit_config_a = {
         .high_limit = ENCODER_PCNT_HIGH_LIMIT_A,
         .low_limit = ENCODER_PCNT_LOW_LIMIT_A,
         .flags.accum_count = true,
     };
 
-    ESP_LOGI(TAG_MAIN, "Init pcnt driver to decode B rotary signal");
+    ESP_LOGI(TAG_MAIN, "Initializing pcnt driver to decode B rotary signal");
     pcnt_unit_config_t unit_config_b = {
         .high_limit = ENCODER_PCNT_HIGH_LIMIT_B,
         .low_limit = ENCODER_PCNT_LOW_LIMIT_B,
