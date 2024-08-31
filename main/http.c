@@ -216,23 +216,15 @@ static void init_server(void) {
    httpd_config_t server_config = HTTPD_DEFAULT_CONFIG();
 
       server_config.task_priority = 3;
-      server_config.stack_size = (8192);
+      server_config.stack_size = 1024*8;
       server_config.server_port = 80;
       server_config.uri_match_fn = httpd_uri_match_wildcard;
       server_config.max_resp_headers = 50;
    
-   esp_err_t err = httpd_start(&server_handle, &server_config);
+   ESP_ERROR_CHECK(httpd_start(&server_handle, &server_config));
    
-   if (err == ESP_OK) {
-      ESP_ERROR_CHECK(httpd_register_uri_handler(server_handle, &http_uri_ota));
-   } else {
-      ESP_LOGE(TAG_MAIN, "Error on http_uri_ota > Code: %d", (int)err);
-   }
-      if (err == ESP_OK) {
-      ESP_ERROR_CHECK(httpd_register_uri_handler(server_handle, &http_uri));
-   } else {
-      ESP_LOGE(TAG_MAIN, "Error on http_uri > Code: %d", (int)err);
-   }
+   ESP_ERROR_CHECK(httpd_register_uri_handler(server_handle, &http_uri_ota));
+   ESP_ERROR_CHECK(httpd_register_uri_handler(server_handle, &http_uri));
 }
 
 static void ota_request() {
@@ -271,7 +263,6 @@ void ota_task(void * arg){
          esp_wifi_stop();
          esp_restart();
       }
-      taskYIELD();
       vTaskDelay(pdMS_TO_TICKS(1000));
    }
    ESP_LOGE(TAG_MAIN, "Task Delete");

@@ -4,6 +4,8 @@
 #include "esp_log.h"
 #include "esp_types.h"
 
+#include <time.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -332,8 +334,6 @@ void sensors_task(void *arg){
         while(sensors_reset_semaphore){
             sensors_status = 0;
             vTaskDelay(pdMS_TO_TICKS(10000));
-            taskYIELD();
         }
-        taskYIELD();
     }
 }

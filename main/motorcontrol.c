@@ -351,8 +351,6 @@ void motorscontrol_task(void *arg){
         while(motorcontrol_reset_semaphore){
             motorcontrol_status = 0;
             vTaskDelay(pdMS_TO_TICKS(10000));
-            taskYIELD();
         }
-        taskYIELD();
     }
 }

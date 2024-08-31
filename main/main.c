@@ -28,7 +28,7 @@
 #define GPIO_PIN_LED_BLUE           40 //gpio led pin 33
 #define GPIO_PIN_LED_RED            42 //gpio led pin 35
 
-#define LEDS_LOOP_PERIOD_MS          100 //ms
+#define LEDS_LOOP_PERIOD_MS          50 //ms
 #define LEDS_LOOP_ID                 0
 
 static EventGroupHandle_t s_wifi_event_group;
@@ -208,6 +208,9 @@ void timestamp_update(void *arg){
 
 void app_main(void) {
 
+    gpio_set_level(GPIO_PIN_LED_GREEN, 1);
+    gpio_set_level(GPIO_PIN_LED_RED,   1);
+
     leds_init();
 
     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -273,9 +276,12 @@ void app_main(void) {
             gpio_set_level(GPIO_PIN_LED_GREEN, 0);
             gpio_set_level(GPIO_PIN_LED_RED,   1);
         } else if ((main_status == 0) || (uros_status == 0) || (lidar_status == 0) || (sensors_status == 0) || (motorcontrol_status == 0)){ // Powering On
-            gpio_set_level(GPIO_PIN_LED_GREEN, gpio_get_level(GPIO_PIN_LED_GREEN));
-            gpio_set_level(GPIO_PIN_LED_RED,   gpio_get_level(GPIO_PIN_LED_RED));
-            vTaskDelay(pdMS_TO_TICKS(250));
+            gpio_set_level(GPIO_PIN_LED_GREEN, 0);
+            gpio_set_level(GPIO_PIN_LED_RED,   0);
+            vTaskDelay(pdMS_TO_TICKS(200));
+            gpio_set_level(GPIO_PIN_LED_GREEN, 1);
+            gpio_set_level(GPIO_PIN_LED_RED,   1);
+            vTaskDelay(pdMS_TO_TICKS(200));
         } else if ((main_status == 2) || (uros_status == 2) || (lidar_status == 2) || (sensors_status == 2) || (motorcontrol_status == 2)){ // Initializing
             gpio_set_level(GPIO_PIN_LED_GREEN, 1);
             gpio_set_level(GPIO_PIN_LED_RED,   1);
@@ -286,10 +292,10 @@ void app_main(void) {
 
         if(schedule_flag){
             gpio_set_level(GPIO_PIN_LED_BLUE, 1);
-            vTaskDelay(pdMS_TO_TICKS(200));
+            vTaskDelay(pdMS_TO_TICKS(30));
             gpio_set_level(GPIO_PIN_LED_BLUE, 0);
+            vTaskDelay(pdMS_TO_TICKS(30));
             schedule_flag = 0;
         }
-        taskYIELD();
     }
 }

@@ -249,63 +249,69 @@ void lidar_task(void * arg){
 
     lidar_status = 1;
 
-    uint16_t measures = 0;
     uint8_t *data_scan = (uint8_t *) malloc(16 * sizeof(uint8_t));
-    while(1){
-        uint16_t ring_buffer_len = 0;
-        ESP_ERROR_CHECK(uart_get_buffered_data_len(UART_PORT_NUM, (size_t*)&ring_buffer_len));
-        if((ring_buffer_len >= 9)){
-            int uart_len = 3;
-            while((ring_buffer_len >= 9) && (uart_len == 3)){
-                uart_read_bytes(UART_PORT_NUM, data_scan, 2, lidar_ms_timeout / portTICK_PERIOD_MS);
-                if ((data_scan[1] & 0x01) & ((data_scan[0] ^ (data_scan[0] >> 1)) & 0x01)){
-                    uart_len = uart_read_bytes(UART_PORT_NUM, &data_scan[2], 3, lidar_ms_timeout / portTICK_PERIOD_MS);
-                    uint16_t quality = data_scan[0] >> 2;
-                    uint8_t new_scan_flag = data_scan[0] & 0x1;
-                    float angle = ((data_scan[1] >> 1) | (data_scan[2] << 7)) / 64.0; //deg
-                    uint16_t angle_index = round(angle); //int deg
-                    float range = ((data_scan[3] | (data_scan[4] << 8)) / 4000.0); //meters
 
-                    if ((uart_len == 3) && (angle >= 0) && (angle <= 360)){
-                        if (((new_scan_flag == 1) && (range >= 0) && (range <= msgs_laserscan.range_max)) || measures >= 360) {
-                            //ESP_LOGI(TAG_MAIN,"Package>Measures: %3d | Last > Flag: %d | Quality: %02d | Angle_i: %03d | Range: %2.8f", measures, new_scan_flag, quality, angle_index, range);
-                            msgs_laserscan.ranges.data[angle_index] = range;
-                            lidar_pub_callback();
-                            new_scan_flag = 0;
-                            measures = 0;
-                            timestamp_update(&msgs_laserscan);
-                            for (uint16_t i = 0; i < (uint16_t) msgs_laserscan.ranges.capacity; i++){
-                                msgs_laserscan.ranges.data[i] = 0;
-                            }
-                            taskYIELD();
-                        } else if ((new_scan_flag == 0) && (range > 0) && (range <= msgs_laserscan.range_max) && (range >= msgs_laserscan.range_min)) {
-                            //ESP_LOGI(TAG_MAIN,"Measure > Quality: %02d | Angle: %3.8f | Angle_i: %03d | Range: %2.8f", quality, angle, angle_index, range);
-                            measures++;
-                            msgs_laserscan.ranges.data[angle_index] = range;
-                            taskYIELD();
-                        }
-                    }
-                }
-                taskYIELD();
-                ESP_ERROR_CHECK(uart_get_buffered_data_len(UART_PORT_NUM, (size_t*)&ring_buffer_len));
-                if (ring_buffer_len > 32) {
-                    ESP_LOGI(TAG_MAIN,"Overflow buffer: %3d", (uint16_t)ring_buffer_len);
-                }
-                while(lidar_reset_semaphore) {
-                    stop_scan_lidar();
-                    gpio_set_level(GPIO_LIDAR_PWM, 0);
-                    lidar_status = 0;
-                    vTaskDelay(pdMS_TO_TICKS(10000));
+    uint16_t quality = 0;
+    uint8_t new_scan_flag = 0;
+    float angle = 0;
+    float range = 0;
+
+    uint16_t ring_buffer_len = 0;
+    int uart_len = 0;
+    uint16_t angle_index = 0;
+    uint16_t measures = 0;
+
+    while(1){
+        uart_get_buffered_data_len(UART_PORT_NUM, (size_t*)&ring_buffer_len);
+        if((ring_buffer_len >= 9)){
+            uart_len = uart_read_bytes(UART_PORT_NUM, data_scan, 2, lidar_ms_timeout / portTICK_PERIOD_MS);
+            while((((data_scan[1] & 0x01) & ((data_scan[0] ^ (data_scan[0] >> 1)) & 0x01)) != 1) && (uart_len == 2) && (ring_buffer_len >= 5)){
+                uart_get_buffered_data_len(UART_PORT_NUM, (size_t*)&ring_buffer_len);
+                if (ring_buffer_len >= 5){
+                    uart_len = uart_read_bytes(UART_PORT_NUM, data_scan, 2, lidar_ms_timeout / portTICK_PERIOD_MS);
+                } else {
+                    vTaskDelay(pdMS_TO_TICKS(1));
                     taskYIELD();
                 }
             }
+            if ((uart_len == 2) && (ring_buffer_len >= 5)){
+                uart_len = uart_read_bytes(UART_PORT_NUM, &data_scan[2], 3, lidar_ms_timeout / portTICK_PERIOD_MS);
+                quality = data_scan[0] >> 2;
+                new_scan_flag = data_scan[0] & 0x1;
+                angle = ((data_scan[1] >> 1) | (data_scan[2] << 7)) / 64.0; //deg
+                angle_index = round(angle); //int deg
+                range = ((data_scan[3] | (data_scan[4] << 8)) / 4000.0); //meters
+
+                if ((angle >= 0) && (angle <= 360)){
+                    if (((new_scan_flag == 1) && (range >= 0) && (range <= msgs_laserscan.range_max)) || measures >= 360) {
+                        //ESP_LOGI(TAG_MAIN,"Package>Measures: %3d | Last > Flag: %d | Quality: %02d | Angle_i: %03d | Range: %2.8f", measures, new_scan_flag, quality, angle_index, range);
+                        msgs_laserscan.ranges.data[angle_index] = range;
+                        lidar_pub_callback();
+                        new_scan_flag = 0;
+                        measures = 0;
+                        timestamp_update(&msgs_laserscan);
+                        for (uint16_t i = 0; i < (uint16_t) msgs_laserscan.ranges.capacity; i++){
+                            msgs_laserscan.ranges.data[i] = 0;
+                        }
+                        if (ring_buffer_len > 400) {
+                            ESP_LOGW(TAG_MAIN,"Ring uart OVERFLOW: %d", ring_buffer_len);
+                        }
+                        taskYIELD();
+                    } else if ((new_scan_flag == 0) && (range > 0) && (range < msgs_laserscan.range_max) && (range >= msgs_laserscan.range_min)) {
+                        //ESP_LOGI(TAG_MAIN,"Measure > Quality: %02d | Angle: %3.8f | Angle_i: %03d | Range: %2.8f", quality, angle, angle_index, range);
+                        measures++;
+                        msgs_laserscan.ranges.data[angle_index] = range;
+                    }
+                }
+            
+            }
         }
+        //vTaskDelay(pdMS_TO_TICKS(1));
         while(lidar_reset_semaphore) {
             stop_scan_lidar();
             gpio_set_level(GPIO_LIDAR_PWM, 0);
             lidar_status = 0;
             vTaskDelay(pdMS_TO_TICKS(10000));
-            taskYIELD();
         }
         taskYIELD();
     }

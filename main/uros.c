@@ -33,6 +33,8 @@
 #include <micro_ros_utilities/type_utilities.h>
 #include <micro_ros_utilities/string_utilities.h>
 
+#include "driver/gpio.h"
+
 #define CHECK(fn) {                                                                                                         \
 		rcl_ret_t temp_rc = fn;                                                                                             \
 		if ((temp_rc != RCL_RET_OK)) {                                                                                      \
@@ -46,6 +48,12 @@
 
 #define PING_AGENT  1
 
+#define UROS_LOOP_PERIOD_MS          15 //ms
+#define UROS_LOOP_ID                 0
+
+#define GPIO_PIN_LED_GREEN          39 //gpio led pin 32
+#define GPIO_PIN_LED_RED            42 //gpio led pin 35
+
 void uros_task(void *argument);
 void cmdvel_sub_callback(const void *);
 void motorcontrol_pub_callback();
@@ -56,6 +64,7 @@ static void init_msgs_imu();
 static void init_msgs_temperature();
 static void init_msgs_batterypack();
 static void init_msgs_laserscan();
+static void uros_loop_cb(TimerHandle_t);
 
 extern void timestamp_update(void*);
 
@@ -91,6 +100,9 @@ SemaphoreHandle_t uros_boot_lidar;
 SemaphoreHandle_t uros_boot_sensors;
 SemaphoreHandle_t uros_boot_motorcontrol;
 
+static SemaphoreHandle_t timer_uros_semaphore;
+static TimerHandle_t uros_timer;
+
 static const char *TAG_MAIN = "Task-uROS";
 
 static const int n_handles = 1; //number of handles that will be added in executor (executor_add_...)
@@ -98,25 +110,39 @@ static const int n_handles = 1; //number of handles that will be added in execut
 extern volatile int8_t uros_status;
 extern volatile int8_t uros_reset_semaphore;
 
+extern volatile uint8_t schedule_flag;
+
+volatile uint16_t ping_counter = 0;
+
+static void uros_loop_cb(TimerHandle_t xTimer) {
+    xSemaphoreGive(timer_uros_semaphore);
+}
+
 void cmdvel_sub_callback(const void *msgin) {
     geometry_msgs__msg__TwistStamped *msgs_cmdvel = (geometry_msgs__msg__TwistStamped *) msgin;
     //ESP_LOGI(TAG_MAIN,"Received: %ld", msgs_cmdvel_temp->header.stamp.sec);
 }
 
 void motorcontrol_pub_callback() {
-    CHECK(rcl_publish(&pub_msgs_encoders, &msgs_encoders, NULL));
+    if (uros_status != -1) {
+        CHECK(rcl_publish(&pub_msgs_encoders, &msgs_encoders, NULL));
+    }
 }
 
 void sensors_pub_callback() {
-    CHECK(rcl_publish(&pub_msgs_imu, &msgs_imu, NULL));
-    // timestamp_update(&msgs_temperature); // TO-DO Insert at the sample acquisition
-    // CHECK(rcl_publish(&pub_msgs_temperature, &msgs_temperature, NULL));
-    // timestamp_update(&msgs_batterypack); // TO-DO Insert at the sample acquisition
-    // CHECK(rcl_publish(&pub_msgs_batterypack, &msgs_batterypack, NULL));
+    if (uros_status != -1) {
+        CHECK(rcl_publish(&pub_msgs_imu, &msgs_imu, NULL));
+        // timestamp_update(&msgs_temperature); // TO-DO Insert at the sample acquisition
+        // CHECK(rcl_publish(&pub_msgs_temperature, &msgs_temperature, NULL));
+        // timestamp_update(&msgs_batterypack); // TO-DO Insert at the sample acquisition
+        // CHECK(rcl_publish(&pub_msgs_batterypack, &msgs_batterypack, NULL));
+    }
 }
 
 void lidar_pub_callback() {
-    CHECK(rcl_publish(&pub_msgs_laserscan, &msgs_laserscan, NULL));
+    if (uros_status != -1) {
+        CHECK(rcl_publish(&pub_msgs_laserscan, &msgs_laserscan, NULL));
+    }
 }
 
 static void init_msgs_encoders(){
@@ -203,7 +229,7 @@ static void init_msgs_laserscan(){
     msgs_laserscan.time_increment = (float)msgs_laserscan.scan_time/360; // period/360 scans
     msgs_laserscan.scan_time = (float)1/7; //period scans
     msgs_laserscan.range_min = 0.12;
-    msgs_laserscan.range_max = 16.0;
+    msgs_laserscan.range_max = 13.0;
 
     msgs_laserscan.ranges.capacity = 360;
     msgs_laserscan.ranges.size = 0;
@@ -213,13 +239,13 @@ static void init_msgs_laserscan(){
         msgs_laserscan.ranges.size = i+1;
         msgs_laserscan.ranges.data[i] = 0;
     }
-    // msgs_laserscan.intensities.capacity = 360;
-    // msgs_laserscan.intensities.size = 0;
-    // msgs_laserscan.intensities.data = (float*) malloc(msgs_laserscan.intensities.capacity * sizeof(float));
-    // for (uint16_t i = 0; i <= (uint16_t) msgs_laserscan.intensities.capacity; i++){
-    //     msgs_laserscan.intensities.size = i;
-    //     msgs_laserscan.intensities.data[i] = 0;
-    // }
+    msgs_laserscan.intensities.capacity = 360;
+    msgs_laserscan.intensities.size = 0;
+    msgs_laserscan.intensities.data = (float*) calloc(msgs_laserscan.intensities.capacity, sizeof(float));
+    for (uint16_t i = 0; i < (uint16_t)msgs_laserscan.intensities.capacity; i++){
+        msgs_laserscan.intensities.size = i+1;
+        msgs_laserscan.intensities.data[i] = 0;
+    }
 
     //assert(rosidl_runtime_c__float32__Sequence__init(&msgs_laserscan.ranges, 360));
     //assert(rosidl_runtime_c__float32__Sequence__init(&msgs_laserscan.intensities, 0));
@@ -229,6 +255,8 @@ static void init_msgs_laserscan(){
 void uros_task(void * arg) {
     ESP_LOGI(TAG_MAIN, "Creating uros_task");
     vTaskDelay(pdMS_TO_TICKS(200));
+
+    timer_uros_semaphore = xSemaphoreCreateBinary();
 
     uros_status = 0;
 
@@ -257,9 +285,9 @@ void uros_task(void * arg) {
     qos_profile_custom.liveliness = RMW_QOS_POLICY_LIVELINESS_AUTOMATIC;
     qos_profile_custom.reliability = RMW_QOS_POLICY_RELIABILITY_RELIABLE;
     qos_profile_custom.history = RMW_QOS_POLICY_HISTORY_SYSTEM_DEFAULT;
-    //qos_profile_custom.liveliness_lease_duration;
-    //qos_profile_custom.deadline;
-    //qos_profile_custom.lifespan;
+    // qos_profile_custom.liveliness_lease_duration = ;
+    // qos_profile_custom.deadline = ;
+    // qos_profile_custom.lifespan = ;
 
     init_options = rcl_get_zero_initialized_init_options();
     CHECK(rcl_init_options_init(&init_options, allocator));
@@ -347,13 +375,44 @@ void uros_task(void * arg) {
     xSemaphoreGive(uros_boot_motorcontrol);
     xSemaphoreGive(uros_boot_sensors);
     xSemaphoreGive(uros_boot_lidar);
+    
+    ESP_LOGI(TAG_MAIN, "Start leds timer loop");
+    uros_timer = xTimerCreate("Leds timer", UROS_LOOP_PERIOD_MS, pdTRUE, (void *)UROS_LOOP_ID, &uros_loop_cb);
+    if(uros_timer == NULL) {
+        ESP_LOGE(TAG_MAIN, "Leds timer create Error!");
+    } else {
+        ESP_LOGI(TAG_MAIN, "Leds timer created!");
+        if(xTimerStart(uros_timer, portMAX_DELAY) != pdPASS) {
+            ESP_LOGE(TAG_MAIN, "Leds timer start error!");
+        } else {
+            ESP_LOGI(TAG_MAIN, "Leds timer started!");
+        }
+    }
 
     uros_status = 1;
 
     while(1){
+        xSemaphoreTake(timer_uros_semaphore, portMAX_DELAY);
         //ESP_LOGI(TAG_MAIN,"Executor spin");
-        CHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(20)));
+        if (uros_status != -1) {
+            CHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(20)));
+            schedule_flag = 1;
+        }
         //CHECK(rclc_executor_spin_some(&executor_pub_msgs, RCL_MS_TO_NS(20)));
+
+        ping_counter++;
+        if (ping_counter > 100) {
+            ping_counter = 0;
+            if (rmw_uros_ping_agent_options((int)200, (uint8_t)1, rmw_options) != RMW_RET_OK){
+                uros_status = -1;
+                gpio_set_level(GPIO_PIN_LED_GREEN, 0);
+                gpio_set_level(GPIO_PIN_LED_RED,   1);
+            } else {
+                uros_status = 1;
+                gpio_set_level(GPIO_PIN_LED_GREEN, 1);
+                gpio_set_level(GPIO_PIN_LED_RED,   0);
+            }
+        }
         while(uros_reset_semaphore) {
             vTaskDelay(pdMS_TO_TICKS(1000));
             ESP_LOGI(TAG_MAIN,"Clear memory");
@@ -372,10 +431,8 @@ void uros_task(void * arg) {
             CHECK(rclc_support_fini(&support));
             uros_status = 0;
             vTaskDelay(pdMS_TO_TICKS(10000));
-            taskYIELD();
         }
         taskYIELD();
-        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     ESP_LOGI(TAG_MAIN,"Clear memory");
