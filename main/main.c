@@ -28,6 +28,9 @@
 #define GPIO_PIN_LED_BLUE           40 //gpio led pin 33
 #define GPIO_PIN_LED_RED            42 //gpio led pin 35
 
+#define LEDS_LOOP_PERIOD_MS          100 //ms
+#define LEDS_LOOP_ID                 0
+
 static EventGroupHandle_t s_wifi_event_group;
 
 SemaphoreHandle_t got_time_semaphore;
@@ -38,55 +41,34 @@ static const char *TAG_NTP = "NTP";
 
 static int s_retry_num = 0;
 
-volatile int8_t main_status;
-volatile int8_t uros_status;
-volatile int8_t lidar_status;
-volatile int8_t sensors_status;
-volatile int8_t motorcontrol_status;
-volatile uint8_t schedule_flag;
+volatile int8_t main_status = 0;
+volatile int8_t uros_status = 0;
+volatile int8_t lidar_status = 0;
+volatile int8_t sensors_status = 0;
+volatile int8_t motorcontrol_status = 0;
+volatile uint8_t schedule_flag = 0;
 
+static SemaphoreHandle_t timer_leds_semaphore;
+static TimerHandle_t leds_timer;
+
+static void wifi_init_sta(void);
+static void event_handler(void*, esp_event_base_t, int32_t, void*);
+static void print_time();
+static void on_got_time(struct timeval *);
+void timestamp_update(void *);
 extern void uros_task(void *);
 extern void sensors_task(void *);
 extern void motorscontrol_task(void *);
 extern void lidar_task(void *);
 extern void ota_task(void *);
-void led_status_task(void *);
-void led_schedule_task(void *);
-void led_init();  
+static void leds_loop_cb(TimerHandle_t);
+static void leds_init();
 
-void led_status_task(void *argument){
-    while(1){
-        if((main_status == -1) || (uros_status == -1) || (lidar_status == -1) || (sensors_status == -1) || (motorcontrol_status == -1)){ // Error > Aborting
-            gpio_set_level(GPIO_PIN_LED_GREEN, 0);
-            gpio_set_level(GPIO_PIN_LED_RED,   1);
-        } else if ((main_status == 0) || (uros_status == 0) || (lidar_status == 0) || (sensors_status == 0) || (motorcontrol_status == 0)){ // Powering On
-            gpio_set_level(GPIO_PIN_LED_GREEN, gpio_get_level(GPIO_PIN_LED_GREEN));
-            gpio_set_level(GPIO_PIN_LED_RED,   gpio_get_level(GPIO_PIN_LED_RED));
-            vTaskDelay(pdMS_TO_TICKS(250));
-        } else if ((main_status == 2) || (uros_status == 2) || (lidar_status == 2) || (sensors_status == 2) || (motorcontrol_status == 2)){ // Initializing
-            gpio_set_level(GPIO_PIN_LED_GREEN, 1);
-            gpio_set_level(GPIO_PIN_LED_RED,   1);
-        } else if ((main_status == 1) && (uros_status == 1) && (lidar_status == 1) && (sensors_status == 1) && (motorcontrol_status == 1)){ // Activated
-            gpio_set_level(GPIO_PIN_LED_GREEN, 1);
-            gpio_set_level(GPIO_PIN_LED_RED,   0);
-        }
-        taskYIELD();
-    }
+static void leds_loop_cb(TimerHandle_t xTimer) {
+    xSemaphoreGive(timer_leds_semaphore);
 }
 
-void led_schedule_task(void *argument){
-    while(1){
-        if(schedule_flag){
-            gpio_set_level(GPIO_PIN_LED_BLUE, 1);
-            vTaskDelay(pdMS_TO_TICKS(20));
-            gpio_set_level(GPIO_PIN_LED_BLUE, 0);
-            schedule_flag = 0;
-        }
-        taskYIELD();    
-    }
-}
-
-void led_init(){
+static void leds_init(){
     ESP_LOGI(TAG_MAIN,"Initing leds driver...");
     gpio_reset_pin(GPIO_PIN_LED_BLUE);
     gpio_set_direction(GPIO_PIN_LED_BLUE, GPIO_MODE_OUTPUT);
@@ -127,7 +109,7 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
     }
 }
 
-void wifi_init_sta(void) {
+static void wifi_init_sta(void) {
 #if (MAC_BASE_CUSTOM == 1)
     unsigned char cust_mac_base[6] = {0xCC,0xDB,0xA7,0x5A,0x30,0x1C};
     esp_base_mac_addr_set(cust_mac_base);
@@ -191,7 +173,7 @@ void wifi_init_sta(void) {
     }
 }
 
-void print_time(){
+static void print_time(){
     time_t now = 0;
     time(&now);
 
@@ -203,7 +185,7 @@ void print_time(){
     ESP_LOGI(TAG_NTP, "%s", time_buffer);
 }
 
-void on_got_time(struct timeval *tv){
+static void on_got_time(struct timeval *tv){
     print_time();
     xSemaphoreGive(got_time_semaphore);
 }
@@ -211,8 +193,7 @@ void on_got_time(struct timeval *tv){
 void timestamp_update(void *arg){
     struct timespec timestamp_raw;
 
-    typedef struct std_msgs__msg__Header_temp
-    {
+    typedef struct std_msgs__msg__Header_temp {
         std_msgs__msg__Header header;
     } std_msgs__msg__Header_temp;
 
@@ -226,12 +207,16 @@ void timestamp_update(void *arg){
 }
 
 void app_main(void) {
-    led_init();
+
+    leds_init();
+
     vTaskDelay(pdMS_TO_TICKS(1000));
+
     ESP_LOGI(TAG_MAIN, "--------------- MCU begin ---------------");
     main_status = 0;
 
     got_time_semaphore = xSemaphoreCreateBinary();
+    timer_leds_semaphore = xSemaphoreCreateBinary();
 
     setenv("TZ", "<-03>3", 1);
     tzset();
@@ -262,12 +247,49 @@ void app_main(void) {
     main_status = 1;
 
     ESP_LOGI(TAG_MAIN, "Creating xTasks");
-    xTaskCreate(ota_task, "OTA Task", 1024*8, NULL, 3, NULL);
-    xTaskCreate(led_schedule_task, "Led Schedule Task", 1024*2, NULL, 2, NULL);
-    xTaskCreate(led_status_task, "Led Status Task", 1024*2, NULL, 2, NULL);
-    xTaskCreate(uros_task, "uROS Task", 1024*6, NULL, 5, NULL);
-    xTaskCreate(sensors_task, "Sensors Task", 1024*4, NULL, 4, NULL);
-    xTaskCreate(motorscontrol_task, "Motor Control Task", 1024*4, NULL, 4, NULL);
-    xTaskCreate(lidar_task, "Lidar Task", 1024*4, NULL, 4, NULL);
+    xTaskCreate(uros_task, "uROS Task", 1024 * 8, NULL, 5, NULL);
+    xTaskCreate(sensors_task, "Sensors Task", 1024 * 4, NULL, 4, NULL);
+    xTaskCreate(motorscontrol_task, "Motor Control Task", 1024 * 4, NULL, 4, NULL);
+    xTaskCreate(lidar_task, "Lidar Task", 1024 * 6, NULL, 4, NULL);
+    xTaskCreate(ota_task, "OTA Task", 1024 * 6, NULL, 3, NULL);
 
+    ESP_LOGI(TAG_MAIN, "Start leds timer loop");
+    leds_timer = xTimerCreate("Leds timer", LEDS_LOOP_PERIOD_MS, pdTRUE, (void *)LEDS_LOOP_ID, &leds_loop_cb);
+    if(leds_timer == NULL) {
+        ESP_LOGE(TAG_MAIN, "Leds timer create Error!");
+    } else {
+        ESP_LOGI(TAG_MAIN, "Leds timer created!");
+        if(xTimerStart(leds_timer, portMAX_DELAY) != pdPASS) {
+            ESP_LOGE(TAG_MAIN, "Leds timer start error!");
+        } else {
+            ESP_LOGI(TAG_MAIN, "Leds timer started!");
+        }
+    }
+
+    while(1){
+        xSemaphoreTake(timer_leds_semaphore, portMAX_DELAY);
+
+        if((main_status == -1) || (uros_status == -1) || (lidar_status == -1) || (sensors_status == -1) || (motorcontrol_status == -1)){ // Error > Aborting
+            gpio_set_level(GPIO_PIN_LED_GREEN, 0);
+            gpio_set_level(GPIO_PIN_LED_RED,   1);
+        } else if ((main_status == 0) || (uros_status == 0) || (lidar_status == 0) || (sensors_status == 0) || (motorcontrol_status == 0)){ // Powering On
+            gpio_set_level(GPIO_PIN_LED_GREEN, gpio_get_level(GPIO_PIN_LED_GREEN));
+            gpio_set_level(GPIO_PIN_LED_RED,   gpio_get_level(GPIO_PIN_LED_RED));
+            vTaskDelay(pdMS_TO_TICKS(250));
+        } else if ((main_status == 2) || (uros_status == 2) || (lidar_status == 2) || (sensors_status == 2) || (motorcontrol_status == 2)){ // Initializing
+            gpio_set_level(GPIO_PIN_LED_GREEN, 1);
+            gpio_set_level(GPIO_PIN_LED_RED,   1);
+        } else if ((main_status == 1) && (uros_status == 1) && (lidar_status == 1) && (sensors_status == 1) && (motorcontrol_status == 1)){ // Activated
+            gpio_set_level(GPIO_PIN_LED_GREEN, 1);
+            gpio_set_level(GPIO_PIN_LED_RED,   0);
+        }
+
+        if(schedule_flag){
+            gpio_set_level(GPIO_PIN_LED_BLUE, 1);
+            vTaskDelay(pdMS_TO_TICKS(200));
+            gpio_set_level(GPIO_PIN_LED_BLUE, 0);
+            schedule_flag = 0;
+        }
+        taskYIELD();
+    }
 }

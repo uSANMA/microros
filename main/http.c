@@ -38,10 +38,10 @@ extern volatile int8_t lidar_status;
 extern volatile int8_t sensors_status;
 extern volatile int8_t motorcontrol_status;
 
-volatile int8_t uros_reset_semaphore;
-volatile int8_t lidar_reset_semaphore;
-volatile int8_t sensors_reset_semaphore;
-volatile int8_t motorcontrol_reset_semaphore;
+volatile int8_t uros_reset_semaphore = 0;
+volatile int8_t lidar_reset_semaphore = 0;
+volatile int8_t sensors_reset_semaphore = 0;
+volatile int8_t motorcontrol_reset_semaphore = 0;
 
 extern const uint8_t file_home_html_start[] asm("_binary_home_html_start");
 extern const uint8_t file_home_html_end[] asm("_binary_home_html_end");
@@ -217,7 +217,6 @@ static void init_server(void) {
 
       server_config.task_priority = 3;
       server_config.stack_size = (8192);
-      server_config.core_id = 0;
       server_config.server_port = 80;
       server_config.uri_match_fn = httpd_uri_match_wildcard;
       server_config.max_resp_headers = 50;
@@ -226,9 +225,13 @@ static void init_server(void) {
    
    if (err == ESP_OK) {
       ESP_ERROR_CHECK(httpd_register_uri_handler(server_handle, &http_uri_ota));
+   } else {
+      ESP_LOGE(TAG_MAIN, "Error on http_uri_ota > Code: %d", (int)err);
+   }
+      if (err == ESP_OK) {
       ESP_ERROR_CHECK(httpd_register_uri_handler(server_handle, &http_uri));
    } else {
-    ESP_LOGE(TAG_MAIN, "Erro on http");
+      ESP_LOGE(TAG_MAIN, "Error on http_uri > Code: %d", (int)err);
    }
 }
 
@@ -251,15 +254,17 @@ static void login() {
 }
 
 void ota_task(void * arg){
+   ESP_LOGI(TAG_MAIN, "Creating ota_task");
+   vTaskDelay(pdMS_TO_TICKS(200));
 
    init_server();
 
    while(1){
       if (restart_rt) {
          ESP_LOGW(TAG_MAIN, "HTTP restart request!");
-         lidar_reset_semaphore = 1;
          sensors_reset_semaphore = 1;
          motorcontrol_reset_semaphore = 1;
+         lidar_reset_semaphore = 1;
          uros_reset_semaphore = 1;
          vTaskDelay(pdMS_TO_TICKS(2000));
          httpd_stop(server_handle);
@@ -267,6 +272,7 @@ void ota_task(void * arg){
          esp_restart();
       }
       taskYIELD();
+      vTaskDelay(pdMS_TO_TICKS(1000));
    }
    ESP_LOGE(TAG_MAIN, "Task Delete");
    vTaskDelete(NULL);

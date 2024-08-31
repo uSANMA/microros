@@ -19,8 +19,7 @@
 #define MCPWM_TIMER_RESOLUTION_HZ                               10000000 // 10MHz, 1 tick = 0.1us
 #define MCPWM_FREQ_HZ                                           16000    // 16KHz PWM
 #define MCPWM_DUTY_TICK_MAX                                     (MCPWM_TIMER_RESOLUTION_HZ / MCPWM_FREQ_HZ) - 20 // maximum value we can set for the duty cycle, in ticks
-#define PID_LOOP_PERIOD_MS_esp                                  31250 //us 0.03125s = 31.25ms = 31250us
-#define PID_LOOP_PERIOD_MS                                      30 //us 0.03125s = 31.25ms = 31250us
+#define PID_LOOP_PERIOD_MS                                      32 //us 0.03125s = 31.25ms = 31250us
 #define PID_LOOP_ID                                             0
 
 #define MCPWM_GPIO_A1                                           3 //forward in2 H brigde
@@ -87,6 +86,8 @@ static void motorcontrol_loop_cb(TimerHandle_t xTimer) {
 }
 
 void motorscontrol_task(void *arg){
+    ESP_LOGI(TAG_MAIN, "Creating motorscontrol_task");
+    vTaskDelay(pdMS_TO_TICKS(200));
 
     motorcontrol_status = 0;
 
@@ -289,6 +290,7 @@ void motorscontrol_task(void *arg){
         ctx_b->report_pulses = real_pulses_b;
 
         // calculate the speed error
+        timestamp_update(&msgs_encoders);
         msgs_encoders.velocity.data[0] = real_pulses_a/(reduction_ratio*encoder_ticks);
         msgs_encoders.velocity.data[1] = real_pulses_b/(reduction_ratio*encoder_ticks);
         if (real_pulses_a < 0){real_pulses_a = -real_pulses_a;}
@@ -345,13 +347,12 @@ void motorscontrol_task(void *arg){
         bdc_motor_set_speed(motor_a, (uint32_t)new_speed_a);
         bdc_motor_set_speed(motor_b, (uint32_t)new_speed_b);
         
-        timestamp_update(&msgs_encoders);
         motorcontrol_pub_callback();
-        taskYIELD();
         while(motorcontrol_reset_semaphore){
             motorcontrol_status = 0;
             vTaskDelay(pdMS_TO_TICKS(10000));
             taskYIELD();
         }
+        taskYIELD();
     }
 }

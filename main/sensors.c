@@ -17,10 +17,6 @@
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
 
-#include "math.h"
-
-#define GPIO_PIN_LED_RED            42 //gpio led pin 35
-
 #define CHECK(fn) {                                                                                                         \
 		esp_err_t temp_rc = fn;                                                                                             \
 		if ((temp_rc != ESP_OK)) {                                                                                          \
@@ -32,8 +28,8 @@
 		}                                                                                                                   \
 	}
 
-#define SENSORS_LOOP_PERIOD_MS          31 //us 0.03125s = 31.25ms = 31250us
-#define SENSORS_LOOP_ID                 0
+#define SENSORS_LOOP_PERIOD_MS          32 //us 0.03125s = 31.25ms = 31250us
+#define SENSORS_LOOP_ID                 1
 
 
 #define GPIO_SDA                        5 //gpio
@@ -111,7 +107,7 @@ static const uint16_t IMU_GYR_CONF_RESET = 0x0048;
 extern volatile int8_t sensors_status;
 extern volatile int8_t sensors_reset_semaphore;
 
-static SemaphoreHandle_t timer_sensors;
+static SemaphoreHandle_t timer_sensors_semaphore;
 static TimerHandle_t sensors_timer;
 static i2c_master_bus_handle_t bus_handle;
 static i2c_master_dev_handle_t imu_handle;
@@ -120,6 +116,10 @@ static i2c_master_dev_handle_t fg_handle;
 extern SemaphoreHandle_t uros_boot_sensors;
 extern sensor_msgs__msg__Imu msgs_imu;
 extern sensor_msgs__msg__Temperature msgs_temperature;
+
+static void sensors_loop_cb(TimerHandle_t xTimer) {
+    xSemaphoreGive(timer_sensors_semaphore);
+}
 
 static esp_err_t temp_init(){
     ESP_LOGI(TAG_ESP32TEMP,"Initializing internal temp sensor");
@@ -142,12 +142,8 @@ static esp_err_t temp_init(){
     return ESP_OK;
 }
 
-static void sensors_loop_cb(TimerHandle_t xTimer) {
-    xSemaphoreGive(timer_sensors);
-}
-
 static esp_err_t imu_read(){
-    uint8_t raw_buffer[16];
+    static  volatile uint8_t raw_buffer[16];
     CHECK(i2c_master_transmit_receive(imu_handle,  &IMU_ACC_X_REG, 1, (uint8_t *)&raw_buffer, 16, I2C_TIMEOUT_MS));
     timestamp_update(&msgs_imu);
     //ESP_LOG_BUFFER_HEXDUMP(TAG_MAIN, &raw_buffer, 16, ESP_LOG_INFO);
@@ -185,7 +181,7 @@ static esp_err_t imu_softreset(){
 
 static esp_err_t imu_init(){
     ESP_LOGI(TAG_IMU,"Initializing IMU");
-    volatile uint8_t rt_buffer[4];
+    static volatile uint8_t rt_buffer[4];
     CHECK(i2c_master_transmit_receive(imu_handle,  &IMU_CHIP_ID_REG, 1, (uint8_t *)&rt_buffer, 4, I2C_TIMEOUT_MS));
     ESP_LOG_BUFFER_HEXDUMP(TAG_FG, (uint8_t*)rt_buffer, 4, ESP_LOG_INFO);
     if (rt_buffer[2] == (uint8_t)IMU_CHIP_ID_RESET){
@@ -265,10 +261,12 @@ static float lsb_to_mps(int16_t val, int8_t g_range)
 }
 
 void sensors_task(void *arg){
+    ESP_LOGI(TAG_MAIN, "Creating sensors_task");
+    vTaskDelay(pdMS_TO_TICKS(200));
 
     sensors_status = 0;
 
-    timer_sensors = xSemaphoreCreateBinary();
+    timer_sensors_semaphore = xSemaphoreCreateBinary();
 
     CHECK(temp_init());
 
@@ -312,20 +310,20 @@ void sensors_task(void *arg){
     ESP_LOGI(TAG_MAIN, "Start sensors timer loop");
     sensors_timer = xTimerCreate("Sensor Timer", SENSORS_LOOP_PERIOD_MS, pdTRUE, (void *)SENSORS_LOOP_ID, &sensors_loop_cb);
     if(sensors_timer == NULL) {
-            ESP_LOGE(TAG_MAIN, "Sensor Timer create Error!");
+        ESP_LOGE(TAG_MAIN, "Sensor Timer create Error!");
+    } else {
+        ESP_LOGI(TAG_MAIN, "Sensor Timer created!");
+        if(xTimerStart(sensors_timer, portMAX_DELAY) != pdPASS) {
+            ESP_LOGE(TAG_MAIN, "Sensor Timer start error!");
         } else {
-            ESP_LOGI(TAG_MAIN, "Sensor Timer created!");
-            if(xTimerStart(sensors_timer, portMAX_DELAY) != pdPASS) {
-                ESP_LOGE(TAG_MAIN, "Sensor Timer start error!");
-            } else {
-                ESP_LOGI(TAG_MAIN, "Sensor Timer started!");
-            }
+            ESP_LOGI(TAG_MAIN, "Sensor Timer started!");
         }
+    }
 
     sensors_status = 1;
 
     while(1){
-        xSemaphoreTake(timer_sensors, portMAX_DELAY);
+        xSemaphoreTake(timer_sensors_semaphore, portMAX_DELAY);
 
         CHECK(imu_read());
 
@@ -336,7 +334,6 @@ void sensors_task(void *arg){
             vTaskDelay(pdMS_TO_TICKS(10000));
             taskYIELD();
         }
-
         taskYIELD();
     }
 }

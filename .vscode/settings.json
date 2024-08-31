@@ -35,7 +35,9 @@
         "nvs_flash.h": "c",
         "cstring": "c",
         "esp_mac.h": "c",
-        "math.h": "c"
+        "math.h": "c",
+        "timers.h": "c",
+        "esp_log.h": "c"
     },
     "ros.distro": "humble"
 }
