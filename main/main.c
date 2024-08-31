@@ -45,7 +45,6 @@ volatile int8_t main_status = 0;
 volatile int8_t uros_status = 0;
 volatile int8_t lidar_status = 0;
 volatile int8_t sensors_status = 0;
-volatile int8_t motorcontrol_status = 0;
 volatile uint8_t schedule_flag = 0;
 
 static SemaphoreHandle_t timer_leds_semaphore;
@@ -252,7 +251,6 @@ void app_main(void) {
     ESP_LOGI(TAG_MAIN, "Creating xTasks");
     xTaskCreate(uros_task, "uROS Task", 1024 * 8, NULL, 5, NULL);
     xTaskCreate(sensors_task, "Sensors Task", 1024 * 4, NULL, 4, NULL);
-    xTaskCreate(motorscontrol_task, "Motor Control Task", 1024 * 4, NULL, 4, NULL);
     xTaskCreate(lidar_task, "Lidar Task", 1024 * 6, NULL, 4, NULL);
     xTaskCreate(ota_task, "OTA Task", 1024 * 6, NULL, 3, NULL);
 
@@ -270,22 +268,22 @@ void app_main(void) {
     }
 
     while(1){
-        xSemaphoreTake(timer_leds_semaphore, portMAX_DELAY);
+        xSemaphoreTake(timer_leds_semaphore, pdMS_TO_TICKS(500));
 
-        if((main_status == -1) || (uros_status == -1) || (lidar_status == -1) || (sensors_status == -1) || (motorcontrol_status == -1)){ // Error > Aborting
+        if((main_status == -1) || (uros_status == -1) || (lidar_status == -1) || (sensors_status == -1)){ // Error > Aborting
             gpio_set_level(GPIO_PIN_LED_GREEN, 0);
             gpio_set_level(GPIO_PIN_LED_RED,   1);
-        } else if ((main_status == 0) || (uros_status == 0) || (lidar_status == 0) || (sensors_status == 0) || (motorcontrol_status == 0)){ // Powering On
+        } else if ((main_status == 0) || (uros_status == 0) || (lidar_status == 0) || (sensors_status == 0)){ // Powering On
             gpio_set_level(GPIO_PIN_LED_GREEN, 0);
             gpio_set_level(GPIO_PIN_LED_RED,   0);
             vTaskDelay(pdMS_TO_TICKS(200));
             gpio_set_level(GPIO_PIN_LED_GREEN, 1);
             gpio_set_level(GPIO_PIN_LED_RED,   1);
             vTaskDelay(pdMS_TO_TICKS(200));
-        } else if ((main_status == 2) || (uros_status == 2) || (lidar_status == 2) || (sensors_status == 2) || (motorcontrol_status == 2)){ // Initializing
+        } else if ((main_status == 2) || (uros_status == 2) || (lidar_status == 2) || (sensors_status == 2)){ // Initializing
             gpio_set_level(GPIO_PIN_LED_GREEN, 1);
             gpio_set_level(GPIO_PIN_LED_RED,   1);
-        } else if ((main_status == 1) && (uros_status == 1) && (lidar_status == 1) && (sensors_status == 1) && (motorcontrol_status == 1)){ // Activated
+        } else if ((main_status == 1) && (uros_status == 1) && (lidar_status == 1) && (sensors_status == 1)){ // Activated
             gpio_set_level(GPIO_PIN_LED_GREEN, 1);
             gpio_set_level(GPIO_PIN_LED_RED,   0);
         }

@@ -56,7 +56,7 @@ static const char *TAG_MAIN = "Task-Lidar";
 
 static const int lidar_ms_timeout = 2;
 static const int lidar_init_ms_timeout = 500;
-static const int uart_buffer_size = 512;
+static const int uart_buffer_size = 1024;
 static const int uart_queue_size = 5;
 
 static uint8_t LIDAR_PKG_STOP_SCAN[] = {0xA5, 0x25}; //no descriptor
@@ -311,7 +311,7 @@ void lidar_task(void * arg){
             stop_scan_lidar();
             gpio_set_level(GPIO_LIDAR_PWM, 0);
             lidar_status = 0;
-            vTaskDelay(pdMS_TO_TICKS(10000));
+            vTaskDelay(portMAX_DELAY);
         }
         taskYIELD();
     }

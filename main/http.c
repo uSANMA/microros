@@ -36,12 +36,10 @@ extern volatile int8_t main_status;
 extern volatile int8_t uros_status;
 extern volatile int8_t lidar_status;
 extern volatile int8_t sensors_status;
-extern volatile int8_t motorcontrol_status;
 
 volatile int8_t uros_reset_semaphore = 0;
 volatile int8_t lidar_reset_semaphore = 0;
 volatile int8_t sensors_reset_semaphore = 0;
-volatile int8_t motorcontrol_reset_semaphore = 0;
 
 extern const uint8_t file_home_html_start[] asm("_binary_home_html_start");
 extern const uint8_t file_home_html_end[] asm("_binary_home_html_end");
@@ -133,13 +131,13 @@ static esp_err_t http_handle(httpd_req_t *req) {
       httpd_resp_sendstr(req, ota_status);
       return ESP_OK;
    } else if (strstr(req->uri, "/uwaba_status.json") != NULL){
-      if (main_status == 1 && uros_status == 1 && lidar_status == 1 && sensors_status == 1 && motorcontrol_status == 1) {
+      if (main_status == 1 && uros_status == 1 && lidar_status == 1 && sensors_status == 1) {
          ESP_LOGI(TAG_MAIN, "Sending uWABA status");
       }
       struct timespec timestamp_raw;
       char log[128];
       clock_gettime(CLOCK_REALTIME, &timestamp_raw);
-      sprintf(log, "{\"timestamp\":%ld, \"main_status\":%d,\"uros_status\":%d,\"lidar_status\":%d,\"sensors_status\":%d,\"motorcontrol_status\":%d}", timestamp_raw.tv_nsec, main_status, uros_status, lidar_status, sensors_status, motorcontrol_status);
+      sprintf(log, "{\"timestamp\":%ld, \"main_status\":%d,\"uros_status\":%d,\"lidar_status\":%d,\"sensors_status\":%d}", timestamp_raw.tv_nsec, main_status, uros_status, lidar_status, sensors_status);
       httpd_resp_sendstr(req, log);
       return ESP_OK;
    }
@@ -171,6 +169,7 @@ static esp_err_t http_handle_ota(httpd_req_t *req) {
 
       ESP_LOGI(TAG_MAIN, "Receive: %d of %d\r", ota_received, ota_length);
       if (!ota_started) {
+
          ota_started = 1;
          char *pBody_start = strstr(ota_buff, "\r\n\r\n") + 4;
          int body_part_len = recv_ota_len - (pBody_start - ota_buff);
@@ -184,6 +183,7 @@ static esp_err_t http_handle_ota(httpd_req_t *req) {
             return ESP_FAIL;
          } else {
             ESP_LOGI(TAG_MAIN, "Writing to partition %d at 0x%lx", update_partition->subtype, update_partition->address);
+            lidar_reset_semaphore = 1;
          }
 
          esp_ota_write(ota_handle, pBody_start, body_part_len);
@@ -255,7 +255,6 @@ void ota_task(void * arg){
       if (restart_rt) {
          ESP_LOGW(TAG_MAIN, "HTTP restart request!");
          sensors_reset_semaphore = 1;
-         motorcontrol_reset_semaphore = 1;
          lidar_reset_semaphore = 1;
          uros_reset_semaphore = 1;
          vTaskDelay(pdMS_TO_TICKS(2000));
@@ -263,7 +262,7 @@ void ota_task(void * arg){
          esp_wifi_stop();
          esp_restart();
       }
-      vTaskDelay(pdMS_TO_TICKS(1000));
+      vTaskDelay(pdMS_TO_TICKS(2000));
    }
    ESP_LOGE(TAG_MAIN, "Task Delete");
    vTaskDelete(NULL);

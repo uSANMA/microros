@@ -56,7 +56,6 @@
 
 void uros_task(void *argument);
 void cmdvel_sub_callback(const void *);
-void motorcontrol_pub_callback();
 void sensors_pub_callback();
 void lidar_pub_callback();
 static void init_msgs_encoders();
@@ -114,6 +113,8 @@ extern volatile uint8_t schedule_flag;
 
 volatile uint16_t ping_counter = 0;
 
+extern volatile int8_t lidar_reset_semaphore;
+
 static void uros_loop_cb(TimerHandle_t xTimer) {
     xSemaphoreGive(timer_uros_semaphore);
 }
@@ -123,14 +124,9 @@ void cmdvel_sub_callback(const void *msgin) {
     //ESP_LOGI(TAG_MAIN,"Received: %ld", msgs_cmdvel_temp->header.stamp.sec);
 }
 
-void motorcontrol_pub_callback() {
-    if (uros_status != -1) {
-        CHECK(rcl_publish(&pub_msgs_encoders, &msgs_encoders, NULL));
-    }
-}
-
 void sensors_pub_callback() {
     if (uros_status != -1) {
+        CHECK(rcl_publish(&pub_msgs_encoders, &msgs_encoders, NULL));
         CHECK(rcl_publish(&pub_msgs_imu, &msgs_imu, NULL));
         // timestamp_update(&msgs_temperature); // TO-DO Insert at the sample acquisition
         // CHECK(rcl_publish(&pub_msgs_temperature, &msgs_temperature, NULL));
@@ -233,18 +229,18 @@ static void init_msgs_laserscan(){
 
     msgs_laserscan.ranges.capacity = 360;
     msgs_laserscan.ranges.size = 0;
-    //msgs_laserscan.ranges.data = (float*) malloc(msgs_laserscan.ranges.capacity * sizeof(float));
     msgs_laserscan.ranges.data = (float*) calloc(msgs_laserscan.ranges.capacity, sizeof(float));
     for (uint16_t i = 0; i < (uint16_t)msgs_laserscan.ranges.capacity; i++){
         msgs_laserscan.ranges.size = i+1;
-        msgs_laserscan.ranges.data[i] = 0;
+        msgs_laserscan.ranges.data[i] = (float)0;
     }
+
     msgs_laserscan.intensities.capacity = 360;
     msgs_laserscan.intensities.size = 0;
     msgs_laserscan.intensities.data = (float*) calloc(msgs_laserscan.intensities.capacity, sizeof(float));
     for (uint16_t i = 0; i < (uint16_t)msgs_laserscan.intensities.capacity; i++){
         msgs_laserscan.intensities.size = i+1;
-        msgs_laserscan.intensities.data[i] = 0;
+        msgs_laserscan.intensities.data[i] = (float)0;
     }
 
     //assert(rosidl_runtime_c__float32__Sequence__init(&msgs_laserscan.ranges, 360));
@@ -392,7 +388,7 @@ void uros_task(void * arg) {
     uros_status = 1;
 
     while(1){
-        xSemaphoreTake(timer_uros_semaphore, portMAX_DELAY);
+        xSemaphoreTake(timer_uros_semaphore, pdMS_TO_TICKS(25));
         //ESP_LOGI(TAG_MAIN,"Executor spin");
         if (uros_status != -1) {
             CHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(20)));
@@ -405,6 +401,7 @@ void uros_task(void * arg) {
             ping_counter = 0;
             if (rmw_uros_ping_agent_options((int)200, (uint8_t)1, rmw_options) != RMW_RET_OK){
                 uros_status = -1;
+                lidar_reset_semaphore = 1;
                 gpio_set_level(GPIO_PIN_LED_GREEN, 0);
                 gpio_set_level(GPIO_PIN_LED_RED,   1);
             } else {

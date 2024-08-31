@@ -53,10 +53,6 @@
          <div id="sensors_status_indicator" class="status-indicator"></div>
       </div>
    
-      <div class="status-item">
-         <span>MotorControl:</span>
-         <div id="motorcontrol_status_indicator" class="status-indicator"></div>
-      </div>
    </div>
    <div class="row fill">
       <div class="space2"></div>
@@ -76,7 +72,7 @@
             if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
                var response = JSON.parse(xhr.responseText);
                document.getElementById("uwaba_status").innerHTML = "TimeStamp:" + response.timestamp  + " | " + "Main:" + response.main_status + " | " + "uROS:" + response.uros_status + " | " + 
-               "Lidar:" + response.lidar_status + " | " + "Sensors:" + response.sensors_status + " | " + "MotorControl:" + response.motorcontrol_status
+               "Lidar:" + response.lidar_status + " | " + "Sensors:" + response.sensors_status
 
                var mainStatusIndicator = document.getElementById("main_status_indicator");
                if (response.main_status == 1) {
@@ -124,17 +120,7 @@
                   sensorsStatusIndicator.style.backgroundColor = 'gray';
                }
 
-               var motorcontrolStatusIndicator = document.getElementById("motorcontrol_status_indicator");
-               if (response.motorcontrol_status == 1) {
-                  motorcontrolStatusIndicator.style.backgroundColor = 'green';
-               } else if (response.motorcontrol_status == 2) {
-                  motorcontrolStatusIndicator.style.backgroundColor = 'orange';
-               } else if (response.motorcontrol_status == -1) {
-                  motorcontrolStatusIndicator.style.backgroundColor = 'red';
-               } else {
-                  motorcontrolStatusIndicator.style.backgroundColor = 'gray';
-               }
-            if (response.main_status != 1 || response.uros_status != 1 || response.lidar_status != 1 || response.sensors_status != 1 || response.motorcontrol_status != 1) {
+            if (response.main_status != 1 || response.uros_status != 1 || response.lidar_status != 1 || response.sensors_status != 1) {
                setTimeout('getstatus()', 200);
             } else {
                setTimeout('getstatus()', 10000);

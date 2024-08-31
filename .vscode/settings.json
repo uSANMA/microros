@@ -39,7 +39,9 @@
         "timers.h": "c",
         "esp_log.h": "c",
         "rclc.h": "c",
-        "imu.h": "c"
+        "imu.h": "c",
+        "temperature.h": "c",
+        "pulse_cnt.h": "c"
     },
     "ros.distro": "humble"
 }
