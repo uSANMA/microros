@@ -224,8 +224,8 @@ static void init_msgs_laserscan(){
     msgs_laserscan.angle_increment = (float)(M_PI/180);
     msgs_laserscan.time_increment = (float)msgs_laserscan.scan_time/360; // period/360 scans
     msgs_laserscan.scan_time = (float)1/7; //period scans
-    msgs_laserscan.range_min = 0.12;
-    msgs_laserscan.range_max = 13.0;
+    msgs_laserscan.range_min = 0.15;
+    msgs_laserscan.range_max = 6.0;
 
     msgs_laserscan.ranges.capacity = 360;
     msgs_laserscan.ranges.size = 0;

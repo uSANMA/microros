@@ -297,7 +297,7 @@ void lidar_task(void * arg){
                             ESP_LOGW(TAG_MAIN,"Ring uart OVERFLOW: %d", ring_buffer_len);
                         }
                         taskYIELD();
-                    } else if ((new_scan_flag == 0) && (range > 0) && (range < msgs_laserscan.range_max) && (range >= msgs_laserscan.range_min)) {
+                    } else if ((new_scan_flag == 0) && (range > 0) && (range <= msgs_laserscan.range_max) && (range >= msgs_laserscan.range_min)) {
                         //ESP_LOGI(TAG_MAIN,"Measure > Quality: %02d | Angle: %3.8f | Angle_i: %03d | Range: %2.8f", quality, angle, angle_index, range);
                         measures++;
                         msgs_laserscan.ranges.data[angle_index] = range;

@@ -541,12 +541,12 @@ void sensors_task(void *arg){
     while(1){
         xSemaphoreTake(timer_sensors_semaphore, pdMS_TO_TICKS(35));
 
-        pcnt_unit_handle_t pcnt_unit_a = ctx_a->pcnt_encoder;
-        pcnt_unit_handle_t pcnt_unit_b = ctx_b->pcnt_encoder;
-        pid_ctrl_block_handle_t pid_ctrl_a = ctx_a->pid_ctrl;
-        pid_ctrl_block_handle_t pid_ctrl_b = ctx_b->pid_ctrl;
-        bdc_motor_handle_t motor_a = ctx_a->motor;
-        bdc_motor_handle_t motor_b = ctx_b->motor;
+        pcnt_unit_a = ctx_a->pcnt_encoder;
+        pcnt_unit_b = ctx_b->pcnt_encoder;
+        pid_ctrl_a = ctx_a->pid_ctrl;
+        pid_ctrl_b = ctx_b->pid_ctrl;
+        motor_a = ctx_a->motor;
+        motor_b = ctx_b->motor;
 
         // encoder reading
         pcnt_unit_get_count(pcnt_unit_a, &cur_pulse_count_a);
@@ -565,11 +565,8 @@ void sensors_task(void *arg){
         if (real_pulses_a < 0){real_pulses_a = -real_pulses_a;}
         if (real_pulses_b < 0){real_pulses_b = -real_pulses_b;}
 
-        PID_EXPECT_SPEED_A = ((((float)msgs_cmdvel.twist.linear.x)*10 + 0.5*(wheels_separation * ((float)msgs_cmdvel.twist.angular.z)))) * reduction_ratio;
-        PID_EXPECT_SPEED_B = ((((float)msgs_cmdvel.twist.linear.x)*10 - 0.5*(wheels_separation * ((float)msgs_cmdvel.twist.angular.z)))) * reduction_ratio;
-        //ESP_LOGI(TAG_MAIN, "---------------------------LOG---------------------------");
-        // ESP_LOGI(TAG_MAIN, "Right: %.4f", PID_EXPECT_SPEED_A);
-        // ESP_LOGI(TAG_MAIN, "Left: %.4f", PID_EXPECT_SPEED_B);
+        PID_EXPECT_SPEED_A = ((((float)msgs_cmdvel.twist.linear.x) + 0.5*(wheels_separation * ((float)msgs_cmdvel.twist.angular.z)))) * (reduction_ratio*encoder_ticks);
+        PID_EXPECT_SPEED_B = ((((float)msgs_cmdvel.twist.linear.x) - 0.5*(wheels_separation * ((float)msgs_cmdvel.twist.angular.z)))) * (reduction_ratio*encoder_ticks);
 
         if ((PID_EXPECT_SPEED_A > 0) && (orientation_motora == 'R')){
             orientation_motora = 'F';
