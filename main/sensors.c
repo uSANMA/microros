@@ -11,9 +11,9 @@
 #include "freertos/task.h"
 #include "freertos/timers.h"
 
-#include <sensor_msgs/msg/imu.h>
-#include <sensor_msgs/msg/joint_state.h>
 #include <geometry_msgs/msg/twist_stamped.h>
+#include <sensor_msgs/msg/imu.h>
+#include <uwaba_prototype_interfaces/msg/encoder_msg.h>
 
 #include "driver/temperature_sensor.h"
 #include <sensor_msgs/msg/temperature.h>
@@ -141,7 +141,7 @@ static i2c_master_dev_handle_t fg_handle;
 extern SemaphoreHandle_t uros_boot_sensors;
 extern sensor_msgs__msg__Imu msgs_imu;
 extern sensor_msgs__msg__Temperature msgs_temperature;
-extern sensor_msgs__msg__JointState msgs_encoders;
+extern uwaba_prototype_interfaces__msg__EncoderMsg msgs_encoders;
 extern geometry_msgs__msg__TwistStamped msgs_cmdvel;
 
 
@@ -560,8 +560,8 @@ void sensors_task(void *arg){
 
         // calculate the speed error
         timestamp_update(&msgs_encoders);
-        msgs_encoders.velocity.data[0] = real_pulses_a/(reduction_ratio*encoder_ticks);
-        msgs_encoders.velocity.data[1] = real_pulses_b/(reduction_ratio*encoder_ticks);
+        msgs_encoders.encoders.data[0] = real_pulses_a/(reduction_ratio*encoder_ticks);
+        msgs_encoders.encoders.data[1] = real_pulses_b/(reduction_ratio*encoder_ticks);
         if (real_pulses_a < 0){real_pulses_a = -real_pulses_a;}
         if (real_pulses_b < 0){real_pulses_b = -real_pulses_b;}
 

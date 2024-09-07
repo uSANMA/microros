@@ -41,7 +41,11 @@
         "rclc.h": "c",
         "imu.h": "c",
         "temperature.h": "c",
-        "pulse_cnt.h": "c"
+        "pulse_cnt.h": "c",
+        "type_utilities.h": "c",
+        "utility": "c",
+        "twist_stamped.h": "c",
+        "rmw_microros.h": "c"
     },
     "ros.distro": "humble"
 }

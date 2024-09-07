@@ -15,20 +15,15 @@
 
 #include <uros_network_interfaces.h>
 
-#include <std_msgs/msg/int32.h>
 #include <geometry_msgs/msg/twist_stamped.h>
-#include <sensor_msgs/msg/joint_state.h>
 #include <sensor_msgs/msg/imu.h>
 #include <sensor_msgs/msg/laser_scan.h>
 #include <sensor_msgs/msg/temperature.h>
 #include <sensor_msgs/msg/battery_state.h>
+#include <uwaba_prototype_interfaces/msg/encoder_msg.h>
 
-#include <std_msgs/msg/multi_array_dimension.h>
-#include <std_msgs/msg/string.h>
 #include <rosidl_runtime_c/string.h>
 #include <rosidl_runtime_c/string_functions.h>
-#include <rosidl_runtime_c/primitives_sequence.h>
-#include <rosidl_runtime_c/primitives_sequence_functions.h>
 
 #include <micro_ros_utilities/type_utilities.h>
 #include <micro_ros_utilities/string_utilities.h>
@@ -87,8 +82,8 @@ static rcl_subscription_t sub_msgs_cmdvel;
 
 static rmw_qos_profile_t qos_profile_custom;
 
-static rosidl_runtime_c__String__Sequence msgs_encoders_name_sequence;
-sensor_msgs__msg__JointState msgs_encoders;
+//static rosidl_runtime_c__String__Sequence msgs_encoders_name_sequence;
+uwaba_prototype_interfaces__msg__EncoderMsg msgs_encoders;
 sensor_msgs__msg__Imu msgs_imu;
 sensor_msgs__msg__Temperature msgs_temperature;
 sensor_msgs__msg__BatteryState msgs_batterypack;
@@ -148,26 +143,31 @@ static void init_msgs_encoders(){
     msgs_encoders.header.frame_id.data = (char*) malloc(msgs_encoders.header.frame_id.capacity * sizeof(char));
     msgs_encoders.header.frame_id = micro_ros_string_utilities_init("motors");
     
-    rosidl_runtime_c__String__Sequence__init(&msgs_encoders_name_sequence, 2);
-    msgs_encoders.name = msgs_encoders_name_sequence;
-    rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[0], (const char *)"Right_motor", 12);
-    rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[1], (const char *)"Left_motor", 11);
-    // rosidl_runtime_c__String__Sequence__fini(&msgs_encoders_name_sequence);
+    // rosidl_runtime_c__String__Sequence__init(&msgs_encoders_name_sequence, 2);
+    // msgs_encoders.name = msgs_encoders_name_sequence;
+    // rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[0], (const char *)"Right_motor", 12);
+    // rosidl_runtime_c__String__assignn(&msgs_encoders.name.data[1], (const char *)"Left_motor", 11);
 
-    msgs_encoders.position.capacity = 2;
-    msgs_encoders.position.size = 2;
-    msgs_encoders.position.data = (double*) malloc(msgs_encoders.position.capacity * sizeof(double));
-    msgs_encoders.position.data[0] = 0; msgs_encoders.position.data[1] = 0;
+    // msgs_encoders.position.capacity = 2;
+    // msgs_encoders.position.size = 2;
+    // msgs_encoders.position.data = (double*) malloc(msgs_encoders.position.capacity * sizeof(double));
+    // msgs_encoders.position.data[0] = 0; msgs_encoders.position.data[1] = 0;
 
-    msgs_encoders.velocity.capacity = 2;
-    msgs_encoders.velocity.size = 2;
-    msgs_encoders.velocity.data = (double*) malloc(msgs_encoders.velocity.capacity * sizeof(double));
-    msgs_encoders.velocity.data[0] = 0; msgs_encoders.velocity.data[1] = 0;
+    // msgs_encoders.velocity.capacity = 2;
+    // msgs_encoders.velocity.size = 2;
+    // msgs_encoders.velocity.data = (double*) malloc(msgs_encoders.velocity.capacity * sizeof(double));
+    // msgs_encoders.velocity.data[0] = 0; msgs_encoders.velocity.data[1] = 0;
 
-    msgs_encoders.effort.capacity = 2;
-    msgs_encoders.effort.size = 2;
-    msgs_encoders.effort.data = (double*) malloc(msgs_encoders.effort.capacity * sizeof(double));
-    msgs_encoders.effort.data[0] = 0; msgs_encoders.effort.data[1] = 0;
+    // msgs_encoders.effort.capacity = 2;
+    // msgs_encoders.effort.size = 2;
+    // msgs_encoders.effort.data = (double*) malloc(msgs_encoders.effort.capacity * sizeof(double));
+    // msgs_encoders.effort.data[0] = 0; msgs_encoders.effort.data[1] = 0;
+
+    msgs_encoders.encoders.capacity = 2;
+    msgs_encoders.encoders.size = 2;
+    msgs_encoders.encoders.data = (double*) malloc(msgs_encoders.encoders.capacity * sizeof(double));
+    msgs_encoders.encoders.data[0] = 68;
+    msgs_encoders.encoders.data[1] = 65;
 
     }
 
@@ -210,8 +210,6 @@ static void init_msgs_laserscan(){
     ESP_LOGI(TAG_MAIN,"Init_LaserScan configuring");
     //https://docs.ros.org/en/melodic/api/sensor_msgs/html/msg/LaserScan.html
 
-    //sensor_msgs__msg__LaserScan__init(&msgs_laserscan);
-
     msgs_laserscan = *sensor_msgs__msg__LaserScan__create();
 
     msgs_laserscan.header.frame_id.capacity = 12;
@@ -242,9 +240,6 @@ static void init_msgs_laserscan(){
         msgs_laserscan.intensities.size = i+1;
         msgs_laserscan.intensities.data[i] = (float)0;
     }
-
-    //assert(rosidl_runtime_c__float32__Sequence__init(&msgs_laserscan.ranges, 360));
-    //assert(rosidl_runtime_c__float32__Sequence__init(&msgs_laserscan.intensities, 0));
 
 }
 
@@ -313,7 +308,7 @@ void uros_task(void * arg) {
         &support));
     ESP_LOGI(TAG_MAIN,"Node created");
 
-    const rosidl_message_type_support_t * type_support_msgs_encoders = ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState);
+    const rosidl_message_type_support_t * type_support_msgs_encoders = ROSIDL_GET_MSG_TYPE_SUPPORT(uwaba_prototype_interfaces, msg, EncoderMsg);
     CHECK(rclc_publisher_init_best_effort(
         &pub_msgs_encoders, 
         &node, 
@@ -394,7 +389,6 @@ void uros_task(void * arg) {
             CHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(20)));
             schedule_flag = 1;
         }
-        //CHECK(rclc_executor_spin_some(&executor_pub_msgs, RCL_MS_TO_NS(20)));
 
         ping_counter++;
         if (ping_counter > 100) {
@@ -402,6 +396,8 @@ void uros_task(void * arg) {
             if (rmw_uros_ping_agent_options((int)200, (uint8_t)1, rmw_options) != RMW_RET_OK){
                 uros_status = -1;
                 lidar_reset_semaphore = 1;
+                msgs_cmdvel.twist.linear.x = 0;
+                msgs_cmdvel.twist.angular.z = 0;
                 gpio_set_level(GPIO_PIN_LED_GREEN, 0);
                 gpio_set_level(GPIO_PIN_LED_RED,   1);
             } else {
@@ -414,7 +410,6 @@ void uros_task(void * arg) {
             vTaskDelay(pdMS_TO_TICKS(1000));
             ESP_LOGI(TAG_MAIN,"Clear memory");
             CHECK(rclc_executor_fini(&executor));
-            //CHECK(rclc_executor_fini(&executor_pub_msgs));
 
 	        CHECK(rcl_publisher_fini(&pub_msgs_encoders, &node));
             CHECK(rcl_publisher_fini(&pub_msgs_imu, &node));
@@ -434,7 +429,6 @@ void uros_task(void * arg) {
 
     ESP_LOGI(TAG_MAIN,"Clear memory");
     CHECK(rclc_executor_fini(&executor));
-    //CHECK(rclc_executor_fini(&executor_pub_msgs));
 
 	CHECK(rcl_publisher_fini(&pub_msgs_encoders, &node));
     CHECK(rcl_publisher_fini(&pub_msgs_imu, &node));
@@ -446,15 +440,6 @@ void uros_task(void * arg) {
 
 	CHECK(rcl_node_fini(&node));
     CHECK(rclc_support_fini(&support));
-
-    // rc = rclc_executor_fini(&executor);
-    // rc += rcl_publisher_fini(&my_pub, &my_node);
-    // rc += rcl_timer_fini(&my_timer);
-    // rc += rcl_subscription_fini(&my_sub, &my_node);
-    // rc += rcl_node_fini(&my_node);
-    // rc += rclc_support_fini(&support);
-    // std_msgs__msg__String__fini(&pub_msg);
-    // std_msgs__msg__String__fini(&sub_msg);
 
     ESP_LOGE(TAG_MAIN, "Task Delete");
     vTaskDelete(NULL);
